@@ -18,6 +18,7 @@ import type { WorkflowRun } from '@deepseek-ai/dsh-workflow'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-subagent'
 import { renderJson, requireFreshProvider, resolveBounded, workflowStopError } from './shared.ts'
+import { RALPLAN_META, RALPLAN_SCRIPT } from './scripts.ts'
 
 export const name = 'ralplan'
 export const inject = ['tools', 'workflowEngine', 'subagents', 'systemPrompt']
@@ -68,120 +69,6 @@ function resolveConfig(config: Config): ResolvedConfig {
   }
   return { toolName, maxIterations, subagentProvider, maxResultChars }
 }
-
-const RALPLAN_META = {
-  name: 'ralplan-consensus',
-  description: 'Planner → Architect → Critic consensus planning until approval or the round cap.',
-  phases: [
-    { title: 'planning', detail: 'Planner drafts and revises the plan snapshot.' },
-    { title: 'review', detail: 'Architect then Critic review the same fixed snapshot.' },
-  ],
-}
-
-/**
- * Fixed, deployment-owned orchestration. The model supplies data only; it
- * cannot alter the loop, reviewer ordering, schemas, or the rule that only the
- * Planner synthesizes the two reviews.
- */
-const RALPLAN_SCRIPT = String.raw`
-const planSchema = {
-  type: 'object',
-  properties: {
-    title: { type: 'string' },
-    goal: { type: 'string' },
-    successCriteria: { type: 'array', items: { type: 'string' } },
-    steps: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          action: { type: 'string' },
-          rationale: { type: 'string' },
-        },
-        required: ['id', 'action'],
-        additionalProperties: false,
-      },
-    },
-    risks: { type: 'array', items: { type: 'string' } },
-  },
-  required: ['title', 'goal', 'steps'],
-  additionalProperties: false,
-}
-
-const verdictSchema = {
-  type: 'object',
-  properties: {
-    verdict: { type: 'string', enum: ['APPROVE', 'ITERATE', 'REJECT'] },
-    summary: { type: 'string' },
-    concerns: { type: 'array', items: { type: 'string' } },
-  },
-  required: ['verdict', 'summary', 'concerns'],
-  additionalProperties: false,
-}
-
-function plannerPrompt(objective) {
-  return [
-    'You are Planner. Produce a decision-complete implementation plan for the following objective.',
-    'State the goal and success criteria, then break the work into ordered, concrete steps. Each step needs a short id and an action. List known risks. Return only the structured plan object.',
-    '',
-    'Objective: ' + objective,
-  ].join('\n')
-}
-
-function architectPrompt(snapshot) {
-  return [
-    'You are Architect. Review the following plan for architectural soundness. Provide the strongest steelman antithesis: at least one real tradeoff tension, the most credible objections, and where possible a synthesis. Flag principle violations. Do NOT modify the plan; output prose review only.',
-    '',
-    'Plan:',
-    snapshot,
-  ].join('\n')
-}
-
-function criticPrompt(snapshot) {
-  return [
-    'You are Critic, the final quality gate. Independently review the SAME fixed plan snapshot below. Enforce principle-option consistency, fair alternatives, clear risk mitigation, testable acceptance criteria, and concrete verification steps.',
-    'Return verdict APPROVE only if the plan is sound; ITERATE for fixable gaps; REJECT for fundamental flaws. List concerns as short strings.',
-    '',
-    'Plan:',
-    snapshot,
-  ].join('\n')
-}
-
-function revisionPrompt(snapshot, architect, critic) {
-  return [
-    'You are Planner. Revise the plan by synthesizing the Architect and Critic feedback below. Only you combine the two reviews; preserve what was sound and fix the gaps. Return a complete revised plan object.',
-    '',
-    'Current plan:',
-    snapshot,
-    '',
-    'Architect feedback:',
-    architect,
-    '',
-    'Critic feedback:',
-    JSON.stringify(critic),
-  ].join('\n')
-}
-
-phase('planning')
-let plan = await agent(plannerPrompt(args.objective), { label: 'Planner', phase: 'planning', schema: planSchema })
-if (plan === null) return { approved: false, error: 'Planner failed to produce a plan' }
-
-for (let round = 1; round <= args.maxIterations; round += 1) {
-  phase('review')
-  const snapshot = JSON.stringify(plan)
-  // Architect and Critic review the SAME fixed snapshot, sequentially, and the
-  // Architect's output never reaches the Critic.
-  const architect = await agent(architectPrompt(snapshot), { label: 'Architect r' + round, phase: 'review' })
-  const critic = await agent(criticPrompt(snapshot), { label: 'Critic r' + round, phase: 'review', schema: verdictSchema })
-  if (architect === null || critic === null) return { approved: false, plan: plan, error: 'A reviewer failed to respond' }
-  if (critic.verdict === 'APPROVE') return { approved: true, plan: plan, rounds: round }
-  const revised = await agent(revisionPrompt(snapshot, architect, critic), { label: 'Planner r' + round, phase: 'planning', schema: planSchema })
-  if (revised === null) return { approved: false, plan: plan, error: 'Planner revision failed' }
-  plan = revised
-}
-return { approved: false, plan: plan, rounds: args.maxIterations }
-`
 
 const DESCRIPTION = 'Run a foreground consensus-planning loop (Planner → Architect → Critic) toward one objective. '
   + 'Each round: Planner produces a plan snapshot, Architect reviews it with the strongest steelman antithesis, then '

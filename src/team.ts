@@ -17,6 +17,7 @@ import type { WorkflowRun } from '@deepseek-ai/dsh-workflow'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-subagent'
 import { renderJson, requireFreshProvider, resolveBounded, workflowStopError } from './shared.ts'
+import { TEAM_META, TEAM_SCRIPT } from './scripts.ts'
 
 export const name = 'team'
 export const inject = ['tools', 'workflowEngine', 'subagents', 'systemPrompt']
@@ -75,109 +76,6 @@ function resolveConfig(config: Config): ResolvedConfig {
   }
   return { toolName, maxIterations, maxSubtasks, subagentProvider, maxResultChars }
 }
-
-const TEAM_META = {
-  name: 'team-staged-pipeline',
-  description: 'Decompose, execute subtasks in parallel, verify, and fix until passing.',
-  phases: [
-    { title: 'team-plan', detail: 'Lead decomposes the objective into subtasks.' },
-    { title: 'team-exec', detail: 'Executors complete subtasks in parallel.' },
-    { title: 'team-verify', detail: 'Verifier checks acceptance criteria.' },
-  ],
-}
-
-/**
- * Fixed, deployment-owned orchestration. The model supplies data only; it
- * cannot alter the pipeline, fan-out, or the verify/fix loop.
- */
-const TEAM_SCRIPT = String.raw`
-const planSchema = {
-  type: 'object',
-  properties: {
-    subtasks: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          title: { type: 'string' },
-          details: { type: 'string' },
-          acceptance: { type: 'array', items: { type: 'string' } },
-        },
-        required: ['id', 'title', 'details', 'acceptance'],
-        additionalProperties: false,
-      },
-    },
-  },
-  required: ['subtasks'],
-  additionalProperties: false,
-}
-
-const verdictSchema = {
-  type: 'object',
-  properties: {
-    pass: { type: 'boolean' },
-    findings: { type: 'array', items: { type: 'string' } },
-  },
-  required: ['pass', 'findings'],
-  additionalProperties: false,
-}
-
-function leadPrompt(objective) {
-  return [
-    'You are the Team lead. Decompose the objective into a list of mostly independent subtasks, each completable by one executor and verifiable by concrete acceptance criteria. Order foundational work first. Return only the structured plan object.',
-    '',
-    'Objective: ' + objective,
-  ].join('\n')
-}
-
-function execPrompt(task, findings) {
-  return [
-    'You are an Executor. Complete exactly this subtask in the shared workspace, using the available tools to read, edit, run, and verify real changes. Deliver the full implementation; do not reduce scope or skip verification.',
-    '',
-    'Subtask:',
-    JSON.stringify(task),
-    '',
-    findings && findings.length > 0
-      ? 'Prior verification findings to address:\n' + JSON.stringify(findings)
-      : 'No prior findings.',
-    '',
-    'Report what you changed and how you verified it.',
-  ].join('\n')
-}
-
-function verifyPrompt(subtasks, results) {
-  return [
-    'You are a Verifier. Inspect the shared workspace and verify the completed subtasks against their acceptance criteria with fresh evidence. Do not claim a pass you did not verify; if anything is unmet, list concrete findings to fix.',
-    '',
-    'Subtasks:',
-    JSON.stringify(subtasks),
-    '',
-    'Executor reports:',
-    JSON.stringify(results),
-  ].join('\n')
-}
-
-phase('team-plan')
-const plan = await agent(leadPrompt(args.objective), { label: 'team-plan', phase: 'team-plan', schema: planSchema })
-if (plan === null) return { status: 'error', error: 'Team plan failed' }
-const subtasks = plan.subtasks.slice(0, args.maxSubtasks)
-
-let findings = []
-for (let round = 1; round <= args.maxIterations; round += 1) {
-  phase('team-exec')
-  const execResults = await parallel(subtasks.map((task) => () => agent(
-    execPrompt(task, findings),
-    { label: 'exec:' + task.id, phase: 'team-exec' },
-  )))
-  phase('team-verify')
-  const verdict = await agent(verifyPrompt(subtasks, execResults), { label: 'team-verify', phase: 'team-verify', schema: verdictSchema })
-  if (verdict === null) return { status: 'error', error: 'Verifier failed', rounds: round }
-  if (verdict.pass) return { status: 'complete', subtasks: subtasks.length, rounds: round, findings: verdict.findings }
-  findings = verdict.findings
-}
-return { status: 'budget-limited', subtasks: subtasks.length, rounds: args.maxIterations, findings: findings }
-`
 
 const DESCRIPTION = 'Run a foreground staged team pipeline toward one objective: decompose into subtasks, execute them in '
   + 'parallel with executor subagents in the shared workspace, verify the combined result against acceptance criteria, and '

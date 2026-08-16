@@ -1,5 +1,7 @@
 node_modules/
 lib/
+.npm-cache/
+coverage/
 *.tsbuildinfo
 *.log
 .DS_Store

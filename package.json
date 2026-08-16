@@ -28,6 +28,8 @@
   },
   "scripts": {
     "build": "tsdown",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "prepare": "npm run build"
   },
   "peerDependencies": {
@@ -41,7 +43,9 @@
     "@deepseek-ai/schemastery": "*"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.8",
     "tsdown": "^0.22.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.8"
   }
 }

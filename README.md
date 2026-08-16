@@ -82,15 +82,22 @@ dsh --profile demo
 
 ```
 oh-my-deepseek/
-├── package.json          # dsh.bundle.patch 声明 + exports 子路径
-├── cordis.patch.yml      # bundle 层：insert ralplan + team 两行
-├── tsdown.config.ts      # prepare 构建（外部化 @deepseek-ai/*）
-├── tsconfig.json         # dev typecheck（需能解析 DSH 类型）
-└── src/
-    ├── index.ts          # 程序化使用时的 re-export
-    ├── shared.ts         # provider 校验 / 结果渲染等公共辅助
-    ├── ralplan.ts        # 插件：ralplan
-    └── team.ts           # 插件：team
+├── package.json            # dsh.bundle.patch 声明 + exports 子路径
+├── cordis.patch.yml        # bundle 层：insert ralplan + team 两行
+├── tsdown.config.ts        # prepare 构建（外部化 @deepseek-ai/*）
+├── tsconfig.json           # dev typecheck（需能解析 DSH 类型）
+├── vitest.config.ts        # 测试 + 覆盖率门槛（核心 ≥90%）
+├── .npmrc                  # legacy-peer-deps（跳过未发布的 DSH peer）
+├── .github/workflows/ci.yml # build + test + coverage
+├── src/
+│   ├── index.ts            # 程序化使用时的 re-export
+│   ├── shared.ts           # provider 校验 / 结果渲染等公共辅助
+│   ├── scripts.ts          # 固定编排脚本 + meta（可单测的核心逻辑）
+│   ├── ralplan.ts          # 插件：ralplan
+│   └── team.ts             # 插件：team
+└── test/
+    ├── shared.test.ts      # 纯函数（正常/边界/异常）
+    └── scripts.test.ts     # 编排脚本语法 + 循环行为
 ```
 
 ---
@@ -98,9 +105,13 @@ oh-my-deepseek/
 ## 开发
 
 ```sh
-npm install        # 装 tsdown + typescript
-npm run build      # 转译 src/ -> lib/（不含类型检查）
+npm install             # 装 tsdown + typescript + vitest
+npm run build           # 转译 src/ -> lib/（不含类型检查）
+npm test                # 单元测试（核心逻辑：正常/边界/异常）
+npm run test:coverage   # 测试 + 覆盖率门槛（核心模块 ≥90%）
 ```
+
+**测试策略**：编排的核心逻辑抽在 `src/scripts.ts`（固定脚本字符串）和 `src/shared.ts`（纯函数）里，这两块**不依赖** `@deepseek-ai/*`，可以在裸环境直接单测。`src/ralplan.ts` / `src/team.ts` 是 DSH 胶水（import 尚未发布到 npm 的 `@deepseek-ai/*`），由 loader 在真实 profile 里验证，不纳入单测。CI（`.github/workflows/ci.yml`）跑 `build + test + coverage` 三步。
 
 类型检查需要在能解析 `@deepseek-ai/*` 的环境里跑（这些包尚未发布到 npm，运行时由 DSH 安装树通过 parent-walk 提供）。两种做法：
 
