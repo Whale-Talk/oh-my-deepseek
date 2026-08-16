@@ -1,0 +1,24 @@
+# Oh-My-DeepSeek bundle layer.
+#
+# Both plugins are tool rows over the shared seams that @deepseek-ai/dsh-base
+# already provides (workflowEngine, subagents, tools, systemPrompt), so no
+# additional provider is needed: a default dsh profile + this bundle is enough.
+#
+# The config below holds defaults. A user's own cordis.patch.yml can override a
+# row by `id`; an override replaces the whole `config`, so restate every key.
+
+- insert:
+    - id: omd-ralplan
+      name: 'oh-my-deepseek/ralplan'
+      config:
+        toolName: ralplan
+        maxIterations: 5
+        subagentProvider: spawn
+
+    - id: omd-team
+      name: 'oh-my-deepseek/team'
+      config:
+        toolName: team
+        maxIterations: 3
+        maxSubtasks: 12
+        subagentProvider: spawn
