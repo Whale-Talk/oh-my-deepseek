@@ -43,6 +43,8 @@ dsh --profile demo
 启动后，agent 面前会多出 `ralplan` 和 `team` 两个工具，以及各自的使用说明（system prompt section）。
 
 > 不需要额外 provider：`dsh-base` 已提供 `workflowEngine`、`subagents`、`tools`、`systemPrompt`，默认 provider `spawn` 支持结构化输出。
+>
+> **已运行的实例不会热加载新插件**：DSH 的 host 侧 cordis 插件树只在 boot 时组合，`dsh plugin add` 之后**必须重启**该 profile 的进程（`dsh web` 同理，关掉再起）才会生效。client-plugin HMR 只管 web 前端产物，不管 host 侧插件。
 
 ### ⚠️ 本地开发：peer 依赖 symlink
 
@@ -154,6 +156,62 @@ npm run test:coverage   # 测试 + 覆盖率门槛（核心模块 ≥90%）
 2. 本地把 DSH 仓库的 `packages/*/*` 链接进来后 `tsc --noEmit`。
 
 `npm run prepare` 会在 git 安装时自动构建，因此**不要**把 `lib/` 提交进 git（已在 `.gitignore`）。
+
+---
+
+## 本地实机验证
+
+装进 profile 后，按下面顺序确认它真的加载成功（每一步都是实测跑通过的方法）：
+
+### 1. 确认配置组合正确
+
+```sh
+dsh --profile web --dump-config
+```
+
+输出末尾应出现 `# == oh-my-deepseek` 一层，含 `omd-ralplan` / `omd-team` 两行及完整默认 config。没有这层说明 `dsh.bundle.patch` 声明没被识别（reconcile 失败）。
+
+### 2. 确认模块能被 import
+
+从 profile 目录、用默认 Node 解析（等价 loader 的 realpath 行为）：
+
+```sh
+cd "$DSH_HOME/profiles/web"
+node --input-type=module -e "import('oh-my-deepseek/ralplan').then(m=>console.log(Object.keys(m)))"
+```
+
+应打印 `[ 'Config', 'apply', 'inject', 'name' ]`（Cordis 插件四要素）。若报 `ERR_MODULE_NOT_FOUND Cannot find package '@deepseek-ai/...'`，说明没跑 `npm run link:peers`（见上文）。
+
+### 3. 端到端 smoke test（不依赖 GUI）
+
+用 headless profile 起一个最小会话，验证插件 import + apply + 工具注册 + LLM 全链路：
+
+```sh
+# 先把插件也装进 headless（headless 是 headless-runner，适合一键验证）
+dsh plugin --profile headless add ./oh-my-deepseek
+# 让模型只回一句固定话：插件若加载失败，boot 会 fail loud 而不是正常回复
+dsh --profile headless "Reply with exactly: PLUGINS_LOADED_OK"
+```
+
+正常返回 `PLUGINS_LOADED_OK`（exit 0）即代表加载链路全通。
+
+### 4. 实测性能提示（重要）
+
+完整移植的 OMC 角色提示词（尤其 critic 280 行）+ `reasoningEffort: high`，会让 **ralplan 每轮评审相当慢**——实测一次完整的 Planner→Architect→Critic 编排可能跑十几分钟还没结束（是"慢"，不是卡死：进程持续有到 LLM 端点的连接、持续消耗 CPU）。这属于预期成本：
+
+- 若只想快速验证链路，用上面第 3 步的 smoke test，别真跑完整 ralplan；
+- 生产/日常想提速，可把 `llm-deepseek` 的 `reasoningEffort` 降到 `medium` 或 `low`（在 `$DSH_HOME/settings.yaml` 里），或减少 `maxIterations`。
+
+### 5. 开发循环
+
+profile 通过 `link:` 指向本 checkout，运行时读的是 **`lib/`（构建产物），不是 `src/`**。改完 TS 后要：
+
+```sh
+npm run build     # 重新转译 + 拷贝角色文件到 lib/roles/
+# 然后重启目标 profile 的进程（见"安装"里的重启提示）
+```
+
+`src/roles/*.md` 是运行时按 `import.meta.url` 相对 `lib/roles/` 读取的，所以**改了角色文件也要 rebuild**（`copy-roles.mjs` 会把它拷进 `lib/roles/`）。
 
 ---
 
