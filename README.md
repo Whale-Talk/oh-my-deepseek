@@ -9,12 +9,13 @@
 | `ralplan` | 工具 `ralplan` | Planner → Architect → Critic 共识规划循环，直到通过或到轮次上限 | `ralplan` |
 | `team` | 工具 `team` | 拆解 → 并行执行 → 验证 → 修复循环 | `team` |
 | `deep-interview` | 工具 `deep_interview_score` + 技能 `deep-interview` | 苏格拉底式需求访谈 + 数学模糊度门控（逐轮提问、加权评分、本体稳定性） | `deep-interview` |
+| `exa-search` | 搜索 provider（`web_search` 后端） | 免密钥 Exa MCP 网络搜索，替换 DeepSeek 官方搜索路由（无需 API key） | （无；借鉴 Nexus-Code / opencode 的 keyless Exa MCP 方案） |
 
 ---
 
 ## 原理（一句话）
 
-DSH 是"万物皆插件"：一个插件 = 导出 `name` / `inject` / `apply(ctx, config)` 的模块，`apply` 里往 `ctx.tools` 注册工具、往 `ctx.systemPrompt` 挂引导。这里的两个插件**不依赖 Claude Code**，而是复用 DSH 原生的两个能力接缝：
+DSH 是"万物皆插件"：一个插件 = 导出 `name` / `inject` / `apply(ctx, config)` 的模块，`apply` 里往 `ctx.tools` 注册工具、往 `ctx.systemPrompt` 挂引导。这里的编排插件**不依赖 Claude Code**，而是复用 DSH 原生的能力接缝：
 
 - `ctx.workflowEngine` —— 真正执行编排脚本（`agent()` / `parallel()` / `pipeline()` 等钩子）；
 - `ctx.subagents` —— 按名注册的子 agent provider（默认 `spawn`，进程内全新子 agent）。
@@ -41,9 +42,9 @@ dsh plugin --profile demo add github:you/oh-my-deepseek
 dsh --profile demo
 ```
 
-启动后，agent 面前会多出 `ralplan` 和 `team` 两个工具，以及各自的使用说明（system prompt section）。
+启动后，agent 面前会多出 `ralplan`、`team`、`deep_interview_score` 三个工具和 `deep-interview` 技能，并把模型可见的 `web_search` 工具后端从 DeepSeek 官方搜索路由切到免密钥 Exa MCP（见下文 `exa-search`）。
 
-> 不需要额外 provider：`dsh-base` 已提供 `workflowEngine`、`subagents`、`tools`、`systemPrompt`，默认 provider `spawn` 支持结构化输出。
+> 不需要额外 provider：`dsh-base` 已提供 `workflowEngine`、`subagents`、`tools`、`systemPrompt`、`web`，默认 provider `spawn` 支持结构化输出。
 >
 > **已运行的实例不会热加载新插件**：DSH 的 host 侧 cordis 插件树只在 boot 时组合，`dsh plugin add` 之后**必须重启**该 profile 的进程（`dsh web` 同理，关掉再起）才会生效。client-plugin HMR 只管 web 前端产物，不管 host 侧插件。
 
@@ -66,9 +67,10 @@ npm run link:peers
 ```
 "ralplan：帮我评审并规划 XXX 的实现方案"
 "team：把 src/ 里的 TypeScript 报错全修掉"
+"帮我搜一下 PX4 飞控的最新稳定版"（web_search，走免密钥 Exa 后端）
 ```
 
-两个工具都返回一个结构化结果（plan / 状态），父 agent 只看到最终结果，中间每个子 agent 的上下文不进入父对话。
+编排工具都返回一个结构化结果（plan / 状态），父 agent 只看到最终结果，中间每个子 agent 的上下文不进入父对话。`exa-search` 不是模型工具，而是 `web_search` 工具的后端 provider：模型照常调用 `web_search`，底层由它代答，模型无感。
 
 ### 配置项（可在一个更晚的 patch 层按 `id` 覆盖，覆盖会替换整份 `config`）
 
@@ -90,6 +92,16 @@ npm run link:peers
 | `maxSubtasks` | `12` | 一次运行最多拆出的子任务数 |
 | `subagentProvider` | `spawn` | 子 agent provider |
 | `maxResultChars` | `50000` | 父侧渲染结果上限 |
+
+`exa-search`（id `omd-exa-search`）：
+
+| key | 默认 | 含义 |
+|---|---|---|
+| `baseURL` | `https://mcp.exa.ai/mcp` | 免密钥 Exa MCP 端点 |
+| `toolName` | `web_search_exa` | Exa MCP 端点的工具名 |
+| `numResults` | `6` | 请求未带 `maxResults` 时的默认结果数 |
+
+切回 DeepSeek 官方搜索（若你有有效 key），在更晚的 patch 层把 `web` 那行改回 `searchProvider: deepseek-official` 即可。
 
 ---
 
@@ -125,7 +137,7 @@ npm run link:peers
 ```
 oh-my-deepseek/
 ├── package.json            # dsh.bundle.patch 声明 + exports 子路径
-├── cordis.patch.yml        # bundle 层：insert ralplan + team + deep-interview 行
+├── cordis.patch.yml        # bundle 层：insert ralplan + team + deep-interview + exa-search 行，并把 web.searchProvider 指向 exa
 ├── tsdown.config.ts        # prepare 构建（外部化 @deepseek-ai/*）
 ├── tsconfig.json           # dev typecheck（需能解析 DSH 类型）
 ├── vitest.config.ts        # 测试 + 覆盖率门槛（核心 ≥90%）
@@ -144,7 +156,8 @@ oh-my-deepseek/
 │   ├── ralplan.ts          # 插件：ralplan
 │   ├── team.ts             # 插件：team
 │   ├── deep-interview.ts   # 插件：deep_interview_score 工具
-│   └── deep-interview-skill.ts   # 插件：deep-interview 内置技能
+│   ├── deep-interview-skill.ts   # 插件：deep-interview 内置技能
+│   └── exa-search.ts       # 插件：免密钥 Exa MCP 搜索 provider（web_search 后端）
 └── test/
     ├── shared.test.ts      # 纯函数（正常/边界/异常）
     ├── roles.test.ts       # 角色完整性与 marker 校验
@@ -163,7 +176,7 @@ npm test                # 单元测试（核心逻辑：正常/边界/异常）
 npm run test:coverage   # 测试 + 覆盖率门槛（核心模块 ≥90%）
 ```
 
-**测试策略**：可单测的核心抽在 `src/shared.ts`（纯函数）、`src/scripts.ts`（固定脚本字符串）和 `src/scoring.ts`（确定性数学）里，这三块**不依赖** `@deepseek-ai/*`，可以在裸环境直接单测。`src/ralplan.ts` / `src/team.ts` / `src/deep-interview.ts` / `src/deep-interview-skill.ts` 是 DSH 胶水（import 尚未发布到 npm 的 `@deepseek-ai/*`），由 loader 在真实 profile 里验证，不纳入单测。CI（`.github/workflows/ci.yml`）跑 `build + test + coverage` 三步。
+**测试策略**：可单测的核心抽在 `src/shared.ts`（纯函数）、`src/scripts.ts`（固定脚本字符串）和 `src/scoring.ts`（确定性数学）里，这三块**不依赖** `@deepseek-ai/*`，可以在裸环境直接单测。`src/ralplan.ts` / `src/team.ts` / `src/deep-interview.ts` / `src/deep-interview-skill.ts` / `src/exa-search.ts` 是 DSH 胶水（import 尚未发布到 npm 的 `@deepseek-ai/*`），由 loader 在真实 profile 里验证，不纳入单测。CI（`.github/workflows/ci.yml`）跑 `build + test + coverage` 三步。
 
 类型检查需要在能解析 `@deepseek-ai/*` 的环境里跑（这些包尚未发布到 npm，运行时由 DSH 安装树通过 parent-walk 提供）。两种做法：
 
@@ -184,7 +197,7 @@ npm run test:coverage   # 测试 + 覆盖率门槛（核心模块 ≥90%）
 dsh --profile web --dump-config
 ```
 
-输出末尾应出现 `# == oh-my-deepseek` 一层，含 `omd-ralplan` / `omd-team` 两行及完整默认 config。没有这层说明 `dsh.bundle.patch` 声明没被识别（reconcile 失败）。
+输出末尾应出现 `# == oh-my-deepseek` 一层，含 `omd-ralplan` / `omd-team` / `omd-deep-interview-*` / `omd-exa-search` 各行及完整默认 config，且 `web` 行的 `searchProvider` 为 `exa`。没有这层说明 `dsh.bundle.patch` 声明没被识别（reconcile 失败）。
 
 ### 2. 确认模块能被 import
 

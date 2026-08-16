@@ -1,7 +1,7 @@
 {
   "name": "oh-my-deepseek",
   "version": "0.1.0",
-  "description": "Oh-My-DeepSeek: multi-agent orchestration plugins for DeepSeek Harness — ralplan consensus planning, team staged pipeline, and deep-interview requirement clarification.",
+  "description": "Oh-My-DeepSeek: multi-agent orchestration plugins for DeepSeek Harness — ralplan consensus planning, team staged pipeline, deep-interview requirement clarification, and keyless Exa web search.",
   "type": "module",
   "license": "MIT",
   "engines": {
