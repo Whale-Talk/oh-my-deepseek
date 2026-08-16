@@ -32,3 +32,16 @@
 
     - id: omd-deep-interview-skill
       name: 'oh-my-deepseek/deep-interview-skill'
+
+    - id: omd-exa-search
+      name: 'oh-my-deepseek/exa-search'
+      config:
+        baseURL: https://mcp.exa.ai/mcp
+        numResults: 6
+
+# Repoint the model-facing web_search tool at the keyless Exa provider above.
+# This is the deployment choice that replaces dsh-base's `deepseek-official`
+# pin, so web search works without any DeepSeek search key.
+- id: web
+  config:
+    searchProvider: exa

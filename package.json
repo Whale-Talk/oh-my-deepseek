@@ -15,6 +15,7 @@
     "./deep-interview": "./lib/deep-interview.js",
     "./deep-interview-skill": "./lib/deep-interview-skill.js",
     "./scoring": "./lib/scoring.js",
+    "./exa-search": "./lib/exa-search.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
@@ -45,6 +46,7 @@
     "@deepseek-ai/dsh-subagent": "*",
     "@deepseek-ai/dsh-system-prompt": "*",
     "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/dsh-web": "*",
     "@deepseek-ai/dsh-workflow": "*",
     "@deepseek-ai/schemastery": "*"
   },

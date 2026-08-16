@@ -27,6 +27,16 @@ export {
   apply as applyDeepInterviewSkill,
 } from './deep-interview-skill.js'
 export {
+  name as exaSearchPluginName,
+  apply as applyExaSearch,
+  Config as ExaSearchConfig,
+  ExaMcpProvider,
+  parseMcpResponse,
+  EXA_MCP_PROVIDER_ID,
+  EXA_MCP_DEFAULT_BASE_URL,
+  EXA_MCP_DEFAULT_TOOL,
+} from './exa-search.js'
+export {
   DIMENSION_WEIGHTS,
   activeDimensions,
   computeAmbiguity,

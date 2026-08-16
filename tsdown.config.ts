@@ -8,6 +8,7 @@ export default defineConfig({
     'src/scoring.ts',
     'src/deep-interview.ts',
     'src/deep-interview-skill.ts',
+    'src/exa-search.ts',
   ],
   format: ['esm'],
   outDir: 'lib',
@@ -31,6 +32,7 @@ export default defineConfig({
       '@deepseek-ai/dsh-subagent',
       '@deepseek-ai/dsh-system-prompt',
       '@deepseek-ai/dsh-skill',
+      '@deepseek-ai/dsh-web',
     ],
   },
 })
