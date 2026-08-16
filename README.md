@@ -150,5 +150,5 @@ npm run test:coverage   # 测试 + 覆盖率门槛（核心模块 ≥90%）
 - **ralph / ultragoal**：DSH 已内置 `ralph` 与 `goal` 工具，**不需要**在本项目复刻。
 - **ralplan / team**：OMC 是"角色库 + 流程剧本"；本项目把**流程**编译成 DSH 的固定 workflow 插件（循环/排序/schema 由代码决定），而**角色提示词完整移植**为 `src/roles/*.md`（见上节）。两样东西都保留了 OMC 的实质，差异只在"流程由代码执行而非由 LLM 演绎"。
 - **git worktree 并行 + merge 冲突协调**：OMC `team` 独有、DSH 无对应件，暂未实现（子 agent 直接在共享 workspace 里协作，冲突由模型/executor 自行处理）。是后续最值得补的一块。
-- **模型分级路由**：OMC 按角色分 `opus/sonnet/haiku`，DSH 目前统一走 `subagentProvider` 的单一模型；按角色分模型是待办。
+- **模型**：所有 worker 统一使用 `subagentProvider` 的默认模型，不做按角色分模型（OMC 的 opus/sonnet/haiku 分级不映射）。角色文件里的 `model:` frontmatter 仅作为上游原文保留，不被消费。
 - **工具硬禁用**：OMC 的 `disallowedTools: Write, Edit`（critic/architect/verifier 只读）在 DSH 侧目前是 prompt 软约束；做真·只读需要 DSH 的 `toolFilter`，也是待办。
