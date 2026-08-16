@@ -1,17 +1,27 @@
 import { describe, expect, it } from 'vitest'
 import { RALPLAN_META, RALPLAN_SCRIPT, TEAM_META, TEAM_SCRIPT } from '../src/scripts.ts'
+import { loadAllRoles } from '../src/roles.ts'
+
+const PLACEHOLDER_ROLES = {
+  planner: 'PLANNER-ROLE',
+  architect: 'ARCHITECT-ROLE',
+  critic: 'CRITIC-ROLE',
+  executor: 'EXECUTOR-ROLE',
+  verifier: 'VERIFIER-ROLE',
+}
 
 /** Wrap a fixed workflow script as an async function with injected engine hooks. */
 function runWorkflow(
   script: string,
   hooks: { agent?: Function; phase?: Function; parallel?: Function } = {},
-  args: unknown = {},
+  args: Record<string, unknown> = {},
 ): Promise<unknown> {
   const agent = hooks.agent ?? (async () => null)
   const phase = hooks.phase ?? (() => {})
   const parallel = hooks.parallel ?? ((thunks: Function[]) => Promise.all(thunks.map((t) => t())))
+  const mergedArgs = { roles: PLACEHOLDER_ROLES, ...args }
   const fn = new Function('agent', 'phase', 'parallel', 'args', `return (async () => { ${script}\n})()`)
-  return fn(agent, phase, parallel, args)
+  return fn(agent, phase, parallel, mergedArgs)
 }
 
 /** Assert a script body parses as valid JS. */
@@ -102,6 +112,19 @@ describe('ralplan consensus loop', () => {
     expect(result.approved).toBe(false)
     expect(result.error).toBe('Planner failed to produce a plan')
   })
+
+  it('injects the full role prompts into Planner, Architect, and Critic', async () => {
+    const roles = loadAllRoles()
+    const { calls, agent } = makeRalplanAgent(['APPROVE'])
+    await runWorkflow(RALPLAN_SCRIPT, { agent }, {
+      objective: 'x',
+      maxIterations: 1,
+      roles: { planner: roles.planner, architect: roles.architect, critic: roles.critic },
+    })
+    expect(calls.find((c) => c.label === 'Planner')?.prompt).toContain('You are Planner')
+    expect(calls.find((c) => c.label === 'Architect r1')?.prompt).toContain('You are Architect')
+    expect(calls.find((c) => c.label === 'Critic r1')?.prompt).toContain('final quality gate')
+  })
 })
 
 describe('team staged pipeline', () => {
@@ -178,5 +201,19 @@ describe('team staged pipeline', () => {
     const result = (await runWorkflow(TEAM_SCRIPT, { agent: async () => null }, { objective: 'x', maxIterations: 3, maxSubtasks: 12 })) as Record<string, unknown>
     expect(result.status).toBe('error')
     expect(result.error).toBe('Team plan failed')
+  })
+
+  it('injects the full role prompts into Lead, Executor, and Verifier', async () => {
+    const roles = loadAllRoles()
+    const { calls, agent } = makeTeamAgent([{ pass: true, findings: [] }])
+    await runWorkflow(TEAM_SCRIPT, { agent }, {
+      objective: 'x',
+      maxIterations: 1,
+      maxSubtasks: 12,
+      roles: { planner: roles.planner, executor: roles.executor, verifier: roles.verifier },
+    })
+    expect(calls.find((c) => c.label === 'team-plan')?.prompt).toContain('You are Planner')
+    expect(calls.find((c) => c.label === 'exec:a')?.prompt).toContain('You are Executor')
+    expect(calls.find((c) => c.label === 'team-verify')?.prompt).toContain('You are Verifier')
   })
 })

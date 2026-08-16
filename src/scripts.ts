@@ -4,6 +4,12 @@
  * DeepSeek Harness packages (schemastery, dsh-tools, ...). The scripts are plain
  * JS bodies executed by `ctx.workflowEngine`; `agent`, `phase`, `parallel`, and
  * `args` are injected by the engine, not imported here.
+ *
+ * Role prompts: `args.roles.<name>` carries the full upstream oh-my-claudecode
+ * role prompt (verbatim). Each worker prompt is the role text, then a short
+ * DSH-adaptation block, then the task. The adaptation block never edits the
+ * role text — it only maps the workflow's interface onto it (structured output
+ * contract, verdict mapping, ignored upstream tooling references).
  * @module oh-my-deepseek/scripts
  */
 
@@ -48,12 +54,41 @@ const planSchema = {
           id: { type: 'string' },
           action: { type: 'string' },
           rationale: { type: 'string' },
+          acceptance: { type: 'string' },
         },
         required: ['id', 'action'],
         additionalProperties: false,
       },
     },
     risks: { type: 'array', items: { type: 'string' } },
+    principles: { type: 'array', items: { type: 'string' } },
+    decisionDrivers: { type: 'array', items: { type: 'string' } },
+    options: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          pros: { type: 'array', items: { type: 'string' } },
+          cons: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['name'],
+        additionalProperties: false,
+      },
+    },
+    adr: {
+      type: 'object',
+      properties: {
+        decision: { type: 'string' },
+        drivers: { type: 'array', items: { type: 'string' } },
+        alternatives: { type: 'array', items: { type: 'string' } },
+        whyChosen: { type: 'string' },
+        consequences: { type: 'string' },
+        followUps: { type: 'array', items: { type: 'string' } },
+      },
+      additionalProperties: false,
+    },
+    preMortem: { type: 'array', items: { type: 'string' } },
   },
   required: ['title', 'goal', 'steps'],
   additionalProperties: false,
@@ -65,42 +100,54 @@ const verdictSchema = {
     verdict: { type: 'string', enum: ['APPROVE', 'ITERATE', 'REJECT'] },
     summary: { type: 'string' },
     concerns: { type: 'array', items: { type: 'string' } },
+    gaps: { type: 'array', items: { type: 'string' } },
+    adversarial: { type: 'boolean' },
   },
   required: ['verdict', 'summary', 'concerns'],
   additionalProperties: false,
 }
 
-function plannerPrompt(objective) {
+function plannerPrompt(objective, role) {
   return [
-    'You are Planner. Produce a decision-complete implementation plan for the following objective.',
-    'State the goal and success criteria, then break the work into ordered, concrete steps. Each step needs a short id and an action. List known risks. Return only the structured plan object.',
+    role,
+    '',
+    '=== oh-my-deepseek workflow task ===',
+    'You are the Planner in a consensus-planning workflow. Produce a decision-complete plan as one structured object. Adapt the role above: do NOT interview the user and do NOT write to .omc/ files — in this workflow you produce the plan directly from the objective. Ignore references to Claude Code tools, /oh-my-claudecode commands, and AskUserQuestion. Fill the RALPLAN-DR fields (principles, decisionDrivers, options, adr) as the role requires.',
     '',
     'Objective: ' + objective,
   ].join('\n')
 }
 
-function architectPrompt(snapshot) {
+function architectPrompt(snapshot, role) {
   return [
-    'You are Architect. Review the following plan for architectural soundness. Provide the strongest steelman antithesis: at least one real tradeoff tension, the most credible objections, and where possible a synthesis. Flag principle violations. Do NOT modify the plan; output prose review only.',
+    role,
+    '',
+    '=== oh-my-deepseek workflow task ===',
+    'You are the Architect reviewing the fixed plan snapshot below. Provide the strongest steelman antithesis, at least one real tradeoff tension, and a synthesis where feasible. Do NOT modify the plan. Adapt the role above: you review the snapshot provided; you do not need to read a codebase first. Output prose review only.',
     '',
     'Plan:',
     snapshot,
   ].join('\n')
 }
 
-function criticPrompt(snapshot) {
+function criticPrompt(snapshot, role) {
   return [
-    'You are Critic, the final quality gate. Independently review the SAME fixed plan snapshot below. Enforce principle-option consistency, fair alternatives, clear risk mitigation, testable acceptance criteria, and concrete verification steps.',
-    'Return verdict APPROVE only if the plan is sound; ITERATE for fixable gaps; REJECT for fundamental flaws. List concerns as short strings.',
+    role,
+    '',
+    '=== oh-my-deepseek workflow task ===',
+    'You are the Critic reviewing the SAME fixed plan snapshot below, independently of the Architect. Return one structured verdict object. Map your verdict to the interface: ACCEPT or ACCEPT-WITH-RESERVATIONS → verdict "APPROVE"; REVISE → verdict "ITERATE"; REJECT → verdict "REJECT". Put findings in concerns and missing pieces in gaps.',
     '',
     'Plan:',
     snapshot,
   ].join('\n')
 }
 
-function revisionPrompt(snapshot, architect, critic) {
+function revisionPrompt(snapshot, architect, critic, role) {
   return [
-    'You are Planner. Revise the plan by synthesizing the Architect and Critic feedback below. Only you combine the two reviews; preserve what was sound and fix the gaps. Return a complete revised plan object.',
+    role,
+    '',
+    '=== oh-my-deepseek workflow task ===',
+    'You are the Planner revising the plan by synthesizing the Architect and Critic feedback below. Only you combine the two reviews; preserve what was sound and fix the gaps. Return a complete revised plan object.',
     '',
     'Current plan:',
     snapshot,
@@ -114,7 +161,7 @@ function revisionPrompt(snapshot, architect, critic) {
 }
 
 phase('planning')
-let plan = await agent(plannerPrompt(args.objective), { label: 'Planner', phase: 'planning', schema: planSchema })
+let plan = await agent(plannerPrompt(args.objective, args.roles.planner), { label: 'Planner', phase: 'planning', schema: planSchema })
 if (plan === null) return { approved: false, error: 'Planner failed to produce a plan' }
 
 for (let round = 1; round <= args.maxIterations; round += 1) {
@@ -122,11 +169,11 @@ for (let round = 1; round <= args.maxIterations; round += 1) {
   const snapshot = JSON.stringify(plan)
   // Architect and Critic review the SAME fixed snapshot, sequentially, and the
   // Architect's output never reaches the Critic.
-  const architect = await agent(architectPrompt(snapshot), { label: 'Architect r' + round, phase: 'review' })
-  const critic = await agent(criticPrompt(snapshot), { label: 'Critic r' + round, phase: 'review', schema: verdictSchema })
+  const architect = await agent(architectPrompt(snapshot, args.roles.architect), { label: 'Architect r' + round, phase: 'review' })
+  const critic = await agent(criticPrompt(snapshot, args.roles.critic), { label: 'Critic r' + round, phase: 'review', schema: verdictSchema })
   if (architect === null || critic === null) return { approved: false, plan: plan, error: 'A reviewer failed to respond' }
   if (critic.verdict === 'APPROVE') return { approved: true, plan: plan, rounds: round }
-  const revised = await agent(revisionPrompt(snapshot, architect, critic), { label: 'Planner r' + round, phase: 'planning', schema: planSchema })
+  const revised = await agent(revisionPrompt(snapshot, architect, critic, args.roles.planner), { label: 'Planner r' + round, phase: 'planning', schema: planSchema })
   if (revised === null) return { approved: false, plan: plan, error: 'Planner revision failed' }
   plan = revised
 }
@@ -165,22 +212,29 @@ const verdictSchema = {
   properties: {
     pass: { type: 'boolean' },
     findings: { type: 'array', items: { type: 'string' } },
+    gaps: { type: 'array', items: { type: 'string' } },
   },
   required: ['pass', 'findings'],
   additionalProperties: false,
 }
 
-function leadPrompt(objective) {
+function leadPrompt(objective, role) {
   return [
-    'You are the Team lead. Decompose the objective into a list of mostly independent subtasks, each completable by one executor and verifiable by concrete acceptance criteria. Order foundational work first. Return only the structured plan object.',
+    role,
+    '',
+    '=== oh-my-deepseek workflow task ===',
+    'You are the Team lead. Decompose the objective into a list of mostly independent subtasks, each completable by one executor and verifiable by concrete acceptance criteria. Map your plan steps to the subtasks list. Order foundational work first. Return only the structured plan object. Adapt the role above: do NOT interview the user or write to .omc/ files.',
     '',
     'Objective: ' + objective,
   ].join('\n')
 }
 
-function execPrompt(task, findings) {
+function execPrompt(task, findings, role) {
   return [
-    'You are an Executor. Complete exactly this subtask in the shared workspace, using the available tools to read, edit, run, and verify real changes. Deliver the full implementation; do not reduce scope or skip verification.',
+    role,
+    '',
+    '=== oh-my-deepseek workflow task ===',
+    'You are an Executor. Complete exactly this subtask in the shared workspace, using the available tools to read, edit, run, and verify real changes. Deliver the full implementation; do not reduce scope or skip verification. Adapt the role above: ignore .omc/ notepad and plan-file references; report your work as text.',
     '',
     'Subtask:',
     JSON.stringify(task),
@@ -188,14 +242,15 @@ function execPrompt(task, findings) {
     findings && findings.length > 0
       ? 'Prior verification findings to address:\n' + JSON.stringify(findings)
       : 'No prior findings.',
-    '',
-    'Report what you changed and how you verified it.',
   ].join('\n')
 }
 
-function verifyPrompt(subtasks, results) {
+function verifyPrompt(subtasks, results, role) {
   return [
-    'You are a Verifier. Inspect the shared workspace and verify the completed subtasks against their acceptance criteria with fresh evidence. Do not claim a pass you did not verify; if anything is unmet, list concrete findings to fix.',
+    role,
+    '',
+    '=== oh-my-deepseek workflow task ===',
+    'You are a Verifier. Inspect the shared workspace and verify the completed subtasks against their acceptance criteria with fresh evidence. Do not claim a pass you did not verify; if anything is unmet, list concrete findings to fix. Return one structured verdict object. Adapt the role above: ignore Claude Code tool references.',
     '',
     'Subtasks:',
     JSON.stringify(subtasks),
@@ -206,7 +261,7 @@ function verifyPrompt(subtasks, results) {
 }
 
 phase('team-plan')
-const plan = await agent(leadPrompt(args.objective), { label: 'team-plan', phase: 'team-plan', schema: planSchema })
+const plan = await agent(leadPrompt(args.objective, args.roles.planner), { label: 'team-plan', phase: 'team-plan', schema: planSchema })
 if (plan === null) return { status: 'error', error: 'Team plan failed' }
 const subtasks = plan.subtasks.slice(0, args.maxSubtasks)
 
@@ -214,11 +269,11 @@ let findings = []
 for (let round = 1; round <= args.maxIterations; round += 1) {
   phase('team-exec')
   const execResults = await parallel(subtasks.map((task) => () => agent(
-    execPrompt(task, findings),
+    execPrompt(task, findings, args.roles.executor),
     { label: 'exec:' + task.id, phase: 'team-exec' },
   )))
   phase('team-verify')
-  const verdict = await agent(verifyPrompt(subtasks, execResults), { label: 'team-verify', phase: 'team-verify', schema: verdictSchema })
+  const verdict = await agent(verifyPrompt(subtasks, execResults, args.roles.verifier), { label: 'team-verify', phase: 'team-verify', schema: verdictSchema })
   if (verdict === null) return { status: 'error', error: 'Verifier failed', rounds: round }
   if (verdict.pass) return { status: 'complete', subtasks: subtasks.length, rounds: round, findings: verdict.findings }
   findings = verdict.findings

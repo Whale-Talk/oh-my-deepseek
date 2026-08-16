@@ -19,7 +19,8 @@
     "lib",
     "cordis.patch.yml",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "dsh": {
     "bundle": {
@@ -27,7 +28,7 @@
     }
   },
   "scripts": {
-    "build": "tsdown",
+    "build": "tsdown && node scripts/copy-roles.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "prepare": "npm run build"

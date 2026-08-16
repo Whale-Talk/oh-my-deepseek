@@ -18,6 +18,7 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-subagent'
 import { renderJson, requireFreshProvider, resolveBounded, workflowStopError } from './shared.ts'
 import { TEAM_META, TEAM_SCRIPT } from './scripts.ts'
+import { loadAllRoles } from './roles.ts'
 
 export const name = 'team'
 export const inject = ['tools', 'workflowEngine', 'subagents', 'systemPrompt']
@@ -145,10 +146,16 @@ export function apply(ctx: Context, config: Config): void {
       const maxIterations = resolveBounded(args.maxIterations, resolved.maxIterations)
       void requireFreshProvider(ctx, resolved.subagentProvider)
 
+      const roles = loadAllRoles()
       const run: WorkflowRun = ctx.workflowEngine.start({
         script: TEAM_SCRIPT,
         meta: TEAM_META,
-        args: { objective, maxIterations, maxSubtasks: resolved.maxSubtasks },
+        args: {
+          objective,
+          maxIterations,
+          maxSubtasks: resolved.maxSubtasks,
+          roles: { planner: roles.planner, executor: roles.executor, verifier: roles.verifier },
+        },
         subagentProvider: resolved.subagentProvider,
         maxTotalAgents: 1 + (resolved.maxSubtasks + 1) * maxIterations,
         parent,

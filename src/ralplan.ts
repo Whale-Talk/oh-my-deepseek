@@ -19,6 +19,7 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-subagent'
 import { renderJson, requireFreshProvider, resolveBounded, workflowStopError } from './shared.ts'
 import { RALPLAN_META, RALPLAN_SCRIPT } from './scripts.ts'
+import { loadAllRoles } from './roles.ts'
 
 export const name = 'ralplan'
 export const inject = ['tools', 'workflowEngine', 'subagents', 'systemPrompt']
@@ -140,10 +141,15 @@ export function apply(ctx: Context, config: Config): void {
       const maxIterations = resolveBounded(args.maxIterations, resolved.maxIterations)
       void requireFreshProvider(ctx, resolved.subagentProvider)
 
+      const roles = loadAllRoles()
       const run: WorkflowRun = ctx.workflowEngine.start({
         script: RALPLAN_SCRIPT,
         meta: RALPLAN_META,
-        args: { objective, maxIterations },
+        args: {
+          objective,
+          maxIterations,
+          roles: { planner: roles.planner, architect: roles.architect, critic: roles.critic },
+        },
         subagentProvider: resolved.subagentProvider,
         maxTotalAgents: 1 + maxIterations * 3,
         parent,
