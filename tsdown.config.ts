@@ -1,7 +1,14 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
-  entry: ['src/index.ts', 'src/ralplan.ts', 'src/team.ts'],
+  entry: [
+    'src/index.ts',
+    'src/ralplan.ts',
+    'src/team.ts',
+    'src/scoring.ts',
+    'src/deep-interview.ts',
+    'src/deep-interview-skill.ts',
+  ],
   format: ['esm'],
   outDir: 'lib',
   clean: true,
@@ -23,6 +30,7 @@ export default defineConfig({
       '@deepseek-ai/dsh-workflow',
       '@deepseek-ai/dsh-subagent',
       '@deepseek-ai/dsh-system-prompt',
+      '@deepseek-ai/dsh-skill',
     ],
   },
 })

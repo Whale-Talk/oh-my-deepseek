@@ -1,8 +1,9 @@
 # Oh-My-DeepSeek bundle layer.
 #
-# Both plugins are tool rows over the shared seams that @deepseek-ai/dsh-base
-# already provides (workflowEngine, subagents, tools, systemPrompt), so no
-# additional provider is needed: a default dsh profile + this bundle is enough.
+# Tool rows (ralplan/team/deep_interview_score) register on ctx.tools; the
+# skill row registers the deep-interview playbook on ctx.skills. All seams
+# (workflowEngine, subagents, tools, systemPrompt, skills) are provided by
+# @deepseek-ai/dsh-base, so a default dsh profile + this bundle is enough.
 #
 # The config below holds defaults. A user's own cordis.patch.yml can override a
 # row by `id`; an override replaces the whole `config`, so restate every key.
@@ -22,3 +23,12 @@
         maxIterations: 3
         maxSubtasks: 12
         subagentProvider: spawn
+
+    - id: omd-deep-interview-score
+      name: 'oh-my-deepseek/deep-interview'
+      config:
+        toolName: deep_interview_score
+        ambiguityThreshold: 0.2
+
+    - id: omd-deep-interview-skill
+      name: 'oh-my-deepseek/deep-interview-skill'

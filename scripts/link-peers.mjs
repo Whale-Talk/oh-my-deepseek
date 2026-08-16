@@ -32,6 +32,7 @@ const peers = [
   'dsh-workflow',
   'dsh-subagent',
   'dsh-system-prompt',
+  'dsh-skill',
 ]
 
 const dest = join(root, 'node_modules', '@deepseek-ai')

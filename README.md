@@ -2,12 +2,13 @@
 
 > 给 **DeepSeek Harness** 用的多智能体编排插件集，灵感来自 [oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode)。
 
-一个 npm 包 = 一个 **bundle**，里面放多个插件。当前内置两个插件：
+一个 npm 包 = 一个 **bundle**，里面放多个插件。当前内置：
 
-| 插件 | 工具名 | 作用 | 对应 OMC |
+| 插件 | 工具/技能 | 作用 | 对应 OMC |
 |---|---|---|---|
-| `ralplan` | `ralplan` | Planner → Architect → Critic 共识规划循环，直到通过或到轮次上限 | `ralplan` |
-| `team` | `team` | 拆解 → 并行执行 → 验证 → 修复循环 | `team` |
+| `ralplan` | 工具 `ralplan` | Planner → Architect → Critic 共识规划循环，直到通过或到轮次上限 | `ralplan` |
+| `team` | 工具 `team` | 拆解 → 并行执行 → 验证 → 修复循环 | `team` |
+| `deep-interview` | 工具 `deep_interview_score` + 技能 `deep-interview` | 苏格拉底式需求访谈 + 数学模糊度门控（逐轮提问、加权评分、本体稳定性） | `deep-interview` |
 
 ---
 
@@ -110,30 +111,44 @@ npm run link:peers
 - **平台适配不篡改原文**：DSH 侧需要的"结构化输出契约、verdict 映射、忽略 Claude 工具引用"等，作为一段 `<DSH 适配指令>` **追加**在角色正文之后（见 `src/scripts.ts`），不改写正文。
 - **已知差异**（正文保留、但 DSH 不消费的字段）：`model: opus/sonnet`（Anthropic 模型分级，DSH 由 `subagentProvider` 统一决定）、`disallowedTools: Write, Edit`（Claude 工具名，在 DSH 里作为只读软约束存在，未做硬工具禁用）、`.omc/` 状态路径与 `/oh-my-claudecode` 命令（DSH 无对应物，适配指令已让 worker 忽略）。
 
+## deep-interview（忠实改编 + 数学门控）
+
+`deep-interview` 与 ralplan/team 类型不同：它不是"开多个子 agent 编排"，而是**和用户逐轮对话的苏格拉底访谈**。因此它拆成两件东西移植：
+
+1. **确定性数学门控 → `deep_interview_score` 工具**（`src/scoring.ts` + `src/deep-interview.ts`）。加权平均模糊度公式（greenfield 40/30/30，brownfield 35/25/25/15）和本体稳定性计算（stable/changed/new/removed，改名实体 >50% 字段重叠计入稳定）是**精确代码**，模型只喂分维度判断、不手算加权平均。已 100% 单测覆盖。
+2. **访谈剧本 → `deep-interview` 技能**（`src/skills/deep-interview.md` + `src/deep-interview-skill.ts`）。通过 `ctx.skills.registerProvider()` 注册为 DSH 内置技能（仿 `skill-badge`），模型经 `skill` 工具加载后遵循剧本：一次一问、Round 0 拓扑门、最弱维度定向、挑战模式（4/6/8 轮）、spec 结晶、审批门控的 execution bridge（→ 本项目的 `ralplan`/`team`，或 DSH 内置 `ralph`）。
+
+**诚实说明**：技能的剧本是**忠实改编**而非字节级一致（角色提示词才是字节级一致）——因为剧本里有大量 OMC 平台专有管道（`.omc/` 状态、`state_write`、`omc-plan`/`autopilot` 交接、companyContext、autoresearch），在 DSH 里无对应物，必须映射到 DSH 等价物（`ask_user_question`、subagent、`ralplan`/`team`/`ralph` 工具）。方法论实质（模糊度门控、拓扑门、挑战模式、spec 结构、三轮质量门）全部保留。
+
 ## 目录结构
 
 ```
 oh-my-deepseek/
 ├── package.json            # dsh.bundle.patch 声明 + exports 子路径
-├── cordis.patch.yml        # bundle 层：insert ralplan + team 两行
+├── cordis.patch.yml        # bundle 层：insert ralplan + team + deep-interview 行
 ├── tsdown.config.ts        # prepare 构建（外部化 @deepseek-ai/*）
 ├── tsconfig.json           # dev typecheck（需能解析 DSH 类型）
 ├── vitest.config.ts        # 测试 + 覆盖率门槛（核心 ≥90%）
 ├── .npmrc                  # legacy-peer-deps（跳过未发布的 DSH peer）
 ├── .github/workflows/ci.yml # build + test + coverage
 ├── THIRD_PARTY_NOTICES.md  # 角色提示词的 MIT 版权声明
-├── scripts/copy-roles.mjs  # 构建后拷贝角色到 lib/roles/
+├── scripts/copy-roles.mjs  # 构建后拷贝 roles/ + skills/ 到 lib/
 ├── src/
 │   ├── index.ts            # 程序化使用时的 re-export
-│   ├── shared.ts           # provider 校验 / 结果渲染等公共辅助
+│   ├── shared.ts           # provider 校验 / 结果渲染 / git 差分等公共辅助
 │   ├── scripts.ts          # 固定编排脚本 + meta（可单测的核心逻辑）
+│   ├── scoring.ts          # deep-interview 确定性数学（模糊度 + 本体稳定性）
 │   ├── roles.ts            # 角色加载器（fileURLToPath 定位）
 │   ├── roles/              # 5 个角色，OMC 原版字节级一致
+│   ├── skills/deep-interview.md  # 访谈剧本（忠实改编）
 │   ├── ralplan.ts          # 插件：ralplan
-│   └── team.ts             # 插件：team
+│   ├── team.ts             # 插件：team
+│   ├── deep-interview.ts   # 插件：deep_interview_score 工具
+│   └── deep-interview-skill.ts   # 插件：deep-interview 内置技能
 └── test/
     ├── shared.test.ts      # 纯函数（正常/边界/异常）
     ├── roles.test.ts       # 角色完整性与 marker 校验
+    ├── scoring.test.ts     # 模糊度门控数学（权重/稳定性/边界）
     └── scripts.test.ts     # 编排脚本语法 + 循环行为 + 角色注入
 ```
 
@@ -148,7 +163,7 @@ npm test                # 单元测试（核心逻辑：正常/边界/异常）
 npm run test:coverage   # 测试 + 覆盖率门槛（核心模块 ≥90%）
 ```
 
-**测试策略**：编排的核心逻辑抽在 `src/scripts.ts`（固定脚本字符串）和 `src/shared.ts`（纯函数）里，这两块**不依赖** `@deepseek-ai/*`，可以在裸环境直接单测。`src/ralplan.ts` / `src/team.ts` 是 DSH 胶水（import 尚未发布到 npm 的 `@deepseek-ai/*`），由 loader 在真实 profile 里验证，不纳入单测。CI（`.github/workflows/ci.yml`）跑 `build + test + coverage` 三步。
+**测试策略**：可单测的核心抽在 `src/shared.ts`（纯函数）、`src/scripts.ts`（固定脚本字符串）和 `src/scoring.ts`（确定性数学）里，这三块**不依赖** `@deepseek-ai/*`，可以在裸环境直接单测。`src/ralplan.ts` / `src/team.ts` / `src/deep-interview.ts` / `src/deep-interview-skill.ts` 是 DSH 胶水（import 尚未发布到 npm 的 `@deepseek-ai/*`），由 loader 在真实 profile 里验证，不纳入单测。CI（`.github/workflows/ci.yml`）跑 `build + test + coverage` 三步。
 
 类型检查需要在能解析 `@deepseek-ai/*` 的环境里跑（这些包尚未发布到 npm，运行时由 DSH 安装树通过 parent-walk 提供）。两种做法：
 
