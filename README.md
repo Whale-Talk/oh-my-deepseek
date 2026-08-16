@@ -1,8 +1,8 @@
 # oh-my-deepseek
 
-> 给 **DeepSeek Harness** 用的多智能体编排插件集，灵感来自 [oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode)。
+> 给 **DeepSeek Harness** 用的多智能体编排 + 网络搜索插件集，灵感来自 [oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode)。
 
-一个 npm 包 = 一个 **bundle**，里面放多个插件。当前内置：
+一个 npm 包 = 一个 **bundle**，内含多个插件。当前内置：
 
 | 插件 | 工具/技能 | 作用 | 对应 OMC |
 |---|---|---|---|
@@ -13,14 +13,14 @@
 
 ---
 
-## 原理（一句话）
+## 原理
 
 DSH 是"万物皆插件"：一个插件 = 导出 `name` / `inject` / `apply(ctx, config)` 的模块，`apply` 里往 `ctx.tools` 注册工具、往 `ctx.systemPrompt` 挂引导。这里的编排插件**不依赖 Claude Code**，而是复用 DSH 原生的能力接缝：
 
 - `ctx.workflowEngine` —— 真正执行编排脚本（`agent()` / `parallel()` / `pipeline()` 等钩子）；
 - `ctx.subagents` —— 按名注册的子 agent provider（默认 `spawn`，进程内全新子 agent）。
 
-所以每个插件就是一个"**固定 Cordis 工具**"：模型只提供 `objective` 数据，循环/排序/schema 由插件写死、模型无法改写。这与 OMC"给 LLM 一篇 markdown 剧本让它去演"是本质区别——这里编排是**编译进去的代码**。
+所以这些编排插件都是"**固定 Cordis 工具**"：模型只提供 `objective` 数据，循环/排序/schema 由插件写死、模型无法改写。这与 OMC"给 LLM 一篇 markdown 剧本让它去演"是本质区别——这里编排是**编译进去的代码**。
 
 ---
 
@@ -125,7 +125,7 @@ npm run link:peers
 
 ## deep-interview（忠实改编 + 数学门控）
 
-`deep-interview` 与 ralplan/team 类型不同：它不是"开多个子 agent 编排"，而是**和用户逐轮对话的苏格拉底访谈**。因此它拆成两件东西移植：
+`deep-interview` 与 ralplan/team 类型不同：它不是"开多个子 agent 编排"，而是**和用户逐轮对话的苏格拉底访谈**。因此它拆成两部分移植：
 
 1. **确定性数学门控 → `deep_interview_score` 工具**（`src/scoring.ts` + `src/deep-interview.ts`）。加权平均模糊度公式（greenfield 40/30/30，brownfield 35/25/25/15）和本体稳定性计算（stable/changed/new/removed，改名实体 >50% 字段重叠计入稳定）是**精确代码**，模型只喂分维度判断、不手算加权平均。已 100% 单测覆盖。
 2. **访谈剧本 → `deep-interview` 技能**（`src/skills/deep-interview.md` + `src/deep-interview-skill.ts`）。通过 `ctx.skills.registerProvider()` 注册为 DSH 内置技能（仿 `skill-badge`），模型经 `skill` 工具加载后遵循剧本：一次一问、Round 0 拓扑门、最弱维度定向、挑战模式（4/6/8 轮）、spec 结晶、审批门控的 execution bridge（→ 本项目的 `ralplan`/`team`，或 DSH 内置 `ralph`）。
