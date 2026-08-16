@@ -8,6 +8,14 @@
 # The config below holds defaults. A user's own cordis.patch.yml can override a
 # row by `id`; an override replaces the whole `config`, so restate every key.
 
+# ralplan/team depend on ctx.workflowEngine, but the dsh-web-app bundle disables
+# `workflow-worker-thread` (its provider) because the Web GUI does not expose
+# workflow/ralph tools by default. Re-enable the engine here — this bundle
+# registers its own orchestration tools on top of it. `tool-workflow` and
+# `tool-ralph` stay disabled; they are unrelated to these plugins.
+- id: workflow-worker-thread
+  disabled: false
+
 - insert:
     - id: omd-ralplan
       name: 'oh-my-deepseek/ralplan'
