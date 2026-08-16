@@ -72,3 +72,38 @@ export function renderJson(value: unknown, maxChars: number): string {
   if (maxChars <= TRUNCATION_NOTICE.length) return TRUNCATION_NOTICE.slice(0, maxChars)
   return `${rendered.slice(0, maxChars - TRUNCATION_NOTICE.length)}${TRUNCATION_NOTICE}`
 }
+
+/**
+ * Parse `git status --porcelain` output into a path → status-code map. Rename
+ * entries keep the destination path. Empty or blank output yields an empty map.
+ */
+export function parseGitStatus(porcelain: string): Map<string, string> {
+  const map = new Map<string, string>()
+  if (porcelain.trim() === '') return map
+  for (const line of porcelain.split('\n')) {
+    const entry = line.trimEnd()
+    if (entry.length < 3) continue
+    const status = entry.slice(0, 2)
+    let path = entry.slice(3)
+    // Renames render as "old -> new"; track the destination only.
+    const arrow = path.indexOf(' -> ')
+    if (arrow !== -1) path = path.slice(arrow + 4)
+    map.set(path, status)
+  }
+  return map
+}
+
+/**
+ * Return the file paths whose git status appeared or changed between two
+ * `--porcelain` snapshots, sorted. A path absent from `before` is treated as
+ * clean, so any status in `after` counts as a change.
+ */
+export function diffGitStatus(before: string, after: string): string[] {
+  const beforeMap = parseGitStatus(before)
+  const afterMap = parseGitStatus(after)
+  const changed: string[] = []
+  for (const [path, status] of afterMap) {
+    if (beforeMap.get(path) !== status) changed.push(path)
+  }
+  return changed.sort()
+}

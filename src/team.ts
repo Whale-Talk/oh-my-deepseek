@@ -6,6 +6,7 @@
  * @module oh-my-deepseek/team
  */
 
+import { execFileSync } from 'node:child_process'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -16,12 +17,26 @@ import type { WorkflowRun } from '@deepseek-ai/dsh-workflow'
 // Declaration merge only: makes ctx.systemPrompt visible for section registration.
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-subagent'
-import { renderJson, requireFreshProvider, resolveBounded, workflowStopError } from './shared.ts'
+import { diffGitStatus, renderJson, requireFreshProvider, resolveBounded, workflowStopError } from './shared.ts'
 import { TEAM_META, TEAM_SCRIPT } from './scripts.ts'
 import { loadAllRoles } from './roles.ts'
 
 export const name = 'team'
 export const inject = ['tools', 'workflowEngine', 'subagents', 'systemPrompt']
+
+/**
+ * Best-effort `git status --porcelain` of the workspace; `undefined` when git
+ * is unavailable, the cwd is absent, or the command fails. The run still
+ * proceeds — this is a transparency observation, never a gate.
+ */
+function gitStatus(cwd: string | undefined): string | undefined {
+  if (cwd === undefined) return undefined
+  try {
+    return execFileSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf8' })
+  } catch {
+    return undefined
+  }
+}
 
 /** Deployment policy for the fixed team workflow. */
 export interface Config {
@@ -147,6 +162,8 @@ export function apply(ctx: Context, config: Config): void {
       void requireFreshProvider(ctx, resolved.subagentProvider)
 
       const roles = loadAllRoles()
+      const cwd = parent.session.header.cwd
+      const gitBefore = gitStatus(cwd)
       const run: WorkflowRun = ctx.workflowEngine.start({
         script: TEAM_SCRIPT,
         meta: TEAM_META,
@@ -169,10 +186,21 @@ export function apply(ctx: Context, config: Config): void {
         const settled = await run.result
         const error = workflowStopError(settled)
         if (error !== undefined) throw new Error(error)
+        const gitAfter = gitStatus(cwd)
+        const changedFiles = gitBefore !== undefined && gitAfter !== undefined
+          ? diffGitStatus(gitBefore, gitAfter)
+          : undefined
+        const scriptResult = settled.value
+        const result = {
+          ...(typeof scriptResult === 'object' && scriptResult !== null && !Array.isArray(scriptResult)
+            ? scriptResult as Record<string, unknown>
+            : { value: scriptResult }),
+          ...(changedFiles !== undefined ? { changedFiles } : {}),
+        }
         return {
           runId: run.id,
           agentsStarted: settled.agentsStarted,
-          result: settled.value as JsonValue,
+          result: result as JsonValue,
         }
       } finally {
         exec.signal.removeEventListener('abort', onAbort)

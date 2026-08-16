@@ -123,7 +123,7 @@ function architectPrompt(snapshot, role) {
     role,
     '',
     '=== oh-my-deepseek workflow task ===',
-    'You are the Architect reviewing the fixed plan snapshot below. Provide the strongest steelman antithesis, at least one real tradeoff tension, and a synthesis where feasible. Do NOT modify the plan. Adapt the role above: you review the snapshot provided; you do not need to read a codebase first. Output prose review only.',
+    'You are the Architect reviewing the fixed plan snapshot below. Provide the strongest steelman antithesis, at least one real tradeoff tension, and a synthesis where feasible. Do NOT modify the plan. Adapt the role above: you review the snapshot provided; you do not need to read a codebase first. Output prose review only. IMPORTANT: you are READ-ONLY — do NOT modify, create, or delete any file; do NOT call write, edit, or str_replace_editor.',
     '',
     'Plan:',
     snapshot,
@@ -135,7 +135,7 @@ function criticPrompt(snapshot, role) {
     role,
     '',
     '=== oh-my-deepseek workflow task ===',
-    'You are the Critic reviewing the SAME fixed plan snapshot below, independently of the Architect. Return one structured verdict object. Map your verdict to the interface: ACCEPT or ACCEPT-WITH-RESERVATIONS → verdict "APPROVE"; REVISE → verdict "ITERATE"; REJECT → verdict "REJECT". Put findings in concerns and missing pieces in gaps.',
+    'You are the Critic reviewing the SAME fixed plan snapshot below, independently of the Architect. Return one structured verdict object. Map your verdict to the interface: ACCEPT or ACCEPT-WITH-RESERVATIONS → verdict "APPROVE"; REVISE → verdict "ITERATE"; REJECT → verdict "REJECT". Put findings in concerns and missing pieces in gaps. IMPORTANT: you are READ-ONLY — do NOT modify, create, or delete any file; do NOT call write, edit, or str_replace_editor.',
     '',
     'Plan:',
     snapshot,
@@ -213,8 +213,9 @@ const verdictSchema = {
     pass: { type: 'boolean' },
     findings: { type: 'array', items: { type: 'string' } },
     gaps: { type: 'array', items: { type: 'string' } },
+    modifiedFiles: { type: 'array', items: { type: 'string' } },
   },
-  required: ['pass', 'findings'],
+  required: ['pass', 'findings', 'modifiedFiles'],
   additionalProperties: false,
 }
 
@@ -250,7 +251,7 @@ function verifyPrompt(subtasks, results, role) {
     role,
     '',
     '=== oh-my-deepseek workflow task ===',
-    'You are a Verifier. Inspect the shared workspace and verify the completed subtasks against their acceptance criteria with fresh evidence. Do not claim a pass you did not verify; if anything is unmet, list concrete findings to fix. Return one structured verdict object. Adapt the role above: ignore Claude Code tool references.',
+    'You are a Verifier. Inspect the shared workspace and verify the completed subtasks against their acceptance criteria with fresh evidence. Do not claim a pass you did not verify; if anything is unmet, list concrete findings to fix. Return one structured verdict object. Adapt the role above: ignore Claude Code tool references. IMPORTANT: you are READ-ONLY — do NOT modify, create, or delete any file; do NOT call write, edit, or str_replace_editor. Only run read-only checks and tests (build/test side effects like artifacts are acceptable, but never source edits). Report any file you modified in modifiedFiles — it should normally be an empty array.',
     '',
     'Subtasks:',
     JSON.stringify(subtasks),
@@ -266,6 +267,7 @@ if (plan === null) return { status: 'error', error: 'Team plan failed' }
 const subtasks = plan.subtasks.slice(0, args.maxSubtasks)
 
 let findings = []
+let lastVerifierModifiedFiles = []
 for (let round = 1; round <= args.maxIterations; round += 1) {
   phase('team-exec')
   const execResults = await parallel(subtasks.map((task) => () => agent(
@@ -275,8 +277,9 @@ for (let round = 1; round <= args.maxIterations; round += 1) {
   phase('team-verify')
   const verdict = await agent(verifyPrompt(subtasks, execResults, args.roles.verifier), { label: 'team-verify', phase: 'team-verify', schema: verdictSchema })
   if (verdict === null) return { status: 'error', error: 'Verifier failed', rounds: round }
-  if (verdict.pass) return { status: 'complete', subtasks: subtasks.length, rounds: round, findings: verdict.findings }
+  lastVerifierModifiedFiles = verdict.modifiedFiles
+  if (verdict.pass) return { status: 'complete', subtasks: subtasks.length, rounds: round, findings: verdict.findings, verifierModifiedFiles: verdict.modifiedFiles }
   findings = verdict.findings
 }
-return { status: 'budget-limited', subtasks: subtasks.length, rounds: args.maxIterations, findings: findings }
+return { status: 'budget-limited', subtasks: subtasks.length, rounds: args.maxIterations, findings: findings, verifierModifiedFiles: lastVerifierModifiedFiles }
 `

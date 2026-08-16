@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { renderJson, requireFreshProvider, resolveBounded, workflowStopError } from '../src/shared.ts'
+import { diffGitStatus, parseGitStatus, renderJson, requireFreshProvider, resolveBounded, workflowStopError } from '../src/shared.ts'
 
 describe('workflowStopError', () => {
   it('returns undefined for a completed run', () => {
@@ -105,5 +105,49 @@ describe('requireFreshProvider', () => {
   it('rejects a provider that inherits parent context', () => {
     const inheriting = { ...fresh, inheritsParentContext: true }
     expect(() => requireFreshProvider(ctxWith(inheriting), 'x')).toThrow(/fresh provider/)
+  })
+})
+
+describe('parseGitStatus', () => {
+  it('returns an empty map for blank output', () => {
+    expect(parseGitStatus('')).toEqual(new Map())
+    expect(parseGitStatus('  \n  ')).toEqual(new Map())
+  })
+
+  it('maps paths to status codes', () => {
+    const map = parseGitStatus(' M src/a.ts\n?? new.ts\nA  added.ts\nD  deleted.ts')
+    expect(map.get('src/a.ts')).toBe(' M')
+    expect(map.get('new.ts')).toBe('??')
+    expect(map.get('added.ts')).toBe('A ')
+    expect(map.get('deleted.ts')).toBe('D ')
+  })
+
+  it('tracks the destination path of a rename', () => {
+    const map = parseGitStatus('R  old.ts -> new.ts')
+    expect(map.get('new.ts')).toBe('R ')
+    expect(map.has('old.ts -> new.ts')).toBe(false)
+  })
+
+  it('skips lines too short to carry a status and path', () => {
+    const map = parseGitStatus(' M src/a.ts\n\nX\n M src/b.ts')
+    expect(map.size).toBe(2)
+  })
+})
+
+describe('diffGitStatus', () => {
+  it('detects files that appeared between snapshots', () => {
+    expect(diffGitStatus('', ' M src/a.ts\n?? b.ts')).toEqual(['b.ts', 'src/a.ts'])
+  })
+
+  it('detects a status change on an existing path', () => {
+    expect(diffGitStatus(' M src/a.ts', 'MM src/a.ts')).toEqual(['src/a.ts'])
+  })
+
+  it('returns nothing when snapshots are equal', () => {
+    expect(diffGitStatus(' M src/a.ts\n?? b.ts', ' M src/a.ts\n?? b.ts')).toEqual([])
+  })
+
+  it('ignores files that were already dirty and unchanged', () => {
+    expect(diffGitStatus(' M src/a.ts', ' M src/a.ts\n M src/b.ts')).toEqual(['src/b.ts'])
   })
 })

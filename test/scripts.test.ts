@@ -125,10 +125,22 @@ describe('ralplan consensus loop', () => {
     expect(calls.find((c) => c.label === 'Architect r1')?.prompt).toContain('You are Architect')
     expect(calls.find((c) => c.label === 'Critic r1')?.prompt).toContain('final quality gate')
   })
+
+  it('instructs critic and architect to stay read-only', async () => {
+    const roles = loadAllRoles()
+    const { calls, agent } = makeRalplanAgent(['APPROVE'])
+    await runWorkflow(RALPLAN_SCRIPT, { agent }, {
+      objective: 'x',
+      maxIterations: 1,
+      roles: { planner: roles.planner, architect: roles.architect, critic: roles.critic },
+    })
+    expect(calls.find((c) => c.label === 'Architect r1')?.prompt).toContain('READ-ONLY')
+    expect(calls.find((c) => c.label === 'Critic r1')?.prompt).toContain('READ-ONLY')
+  })
 })
 
 describe('team staged pipeline', () => {
-  function makeTeamAgent(verdicts: Array<{ pass: boolean; findings: string[] }>) {
+  function makeTeamAgent(verdicts: Array<{ pass: boolean; findings: string[]; modifiedFiles?: string[] }>) {
     const calls: { label: string; prompt: string }[] = []
     let verifyRound = 0
     return {
@@ -146,7 +158,8 @@ describe('team staged pipeline', () => {
         if (opts.label.startsWith('exec:')) return 'done ' + opts.label
         if (opts.label === 'team-verify') {
           verifyRound += 1
-          return verdicts[verifyRound - 1]
+          const v = verdicts[verifyRound - 1]
+          return { ...v, modifiedFiles: v.modifiedFiles ?? [] }
         }
         return null
       },
@@ -215,5 +228,20 @@ describe('team staged pipeline', () => {
     expect(calls.find((c) => c.label === 'team-plan')?.prompt).toContain('You are Planner')
     expect(calls.find((c) => c.label === 'exec:a')?.prompt).toContain('You are Executor')
     expect(calls.find((c) => c.label === 'team-verify')?.prompt).toContain('You are Verifier')
+  })
+
+  it('tells the verifier it is read-only and surfaces its modifiedFiles', async () => {
+    const roles = loadAllRoles()
+    const { calls, agent } = makeTeamAgent([{ pass: true, findings: [], modifiedFiles: ['src/sneaky.ts'] }])
+    const result = (await runWorkflow(TEAM_SCRIPT, { agent }, {
+      objective: 'x',
+      maxIterations: 1,
+      maxSubtasks: 12,
+      roles: { planner: roles.planner, executor: roles.executor, verifier: roles.verifier },
+    })) as Record<string, unknown>
+    const verifyPrompt = calls.find((c) => c.label === 'team-verify')?.prompt ?? ''
+    expect(verifyPrompt).toContain('READ-ONLY')
+    expect(verifyPrompt).toContain('modifiedFiles')
+    expect(result.verifierModifiedFiles).toEqual(['src/sneaky.ts'])
   })
 })

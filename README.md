@@ -151,4 +151,4 @@ npm run test:coverage   # 测试 + 覆盖率门槛（核心模块 ≥90%）
 - **ralplan / team**：OMC 是"角色库 + 流程剧本"；本项目把**流程**编译成 DSH 的固定 workflow 插件（循环/排序/schema 由代码决定），而**角色提示词完整移植**为 `src/roles/*.md`（见上节）。两样东西都保留了 OMC 的实质，差异只在"流程由代码执行而非由 LLM 演绎"。
 - **git worktree 并行 + merge 冲突协调**：OMC `team` 独有、DSH 无对应件，暂未实现（子 agent 直接在共享 workspace 里协作，冲突由模型/executor 自行处理）。是后续最值得补的一块。
 - **模型**：所有 worker 统一使用 `subagentProvider` 的默认模型，不做按角色分模型（OMC 的 opus/sonnet/haiku 分级不映射）。角色文件里的 `model:` frontmatter 仅作为上游原文保留，不被消费。
-- **工具硬禁用**：OMC 的 `disallowedTools: Write, Edit`（critic/architect/verifier 只读）在 DSH 侧目前是 prompt 软约束；做真·只读需要 DSH 的 `toolFilter`，也是待办。
+- **工具硬禁用（只读角色）**：采用**软约束 + 事后检测**（路线 C）。OMC 的 `disallowedTools: Write, Edit` 在 DSH 侧当前做不到工具级硬禁用（workflow 的 `agent()` 钩子不支持 `toolFilter`，而 `toolFilter` 是 DSH 里唯一的硬移除手段）。落地为三层：(1) critic/architect/verifier 的适配指令强声明 READ-ONLY、禁用 `write`/`edit`/`str_replace_editor`；(2) verifier 结构化报告里必填 `modifiedFiles` 自证；(3) 插件层在 team run 前后各跑一次 `git status --porcelain`，把运行期新增/变化的文件（`changedFiles`）附到结果，供父 agent 复核。已知局限：git 快照只能捕捉状态变化、捕捉不到"已改动文件又被二次改动"，且 git 不可用时静默跳过——归因仍主要靠 verifier 自证 + 软约束，不是事前硬保证。
