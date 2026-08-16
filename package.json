@@ -31,6 +31,7 @@
     "build": "tsdown && node scripts/copy-roles.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "link:peers": "node scripts/link-peers.mjs",
     "prepare": "npm run build"
   },
   "peerDependencies": {

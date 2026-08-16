@@ -44,6 +44,18 @@ dsh --profile demo
 
 > 不需要额外 provider：`dsh-base` 已提供 `workflowEngine`、`subagents`、`tools`、`systemPrompt`，默认 provider `spawn` 支持结构化输出。
 
+### ⚠️ 本地开发：peer 依赖 symlink
+
+`@deepseek-ai/*`（cordis / schemastery / dsh-tools / …）**尚未发布到 npm**，所以 `npm install` 无法装进本项目；运行时由 DSH 安装树在 `$DSH_HOME/profiles/node_modules/@deepseek-ai` 提供。而 `dsh plugin add ./oh-my-deepseek` 用的是 `link:`（symlink 指向本 checkout），Node 默认 realpath 后，模块内部的 `import "@deepseek-ai/..."` 会从**本 checkout** 向上找 node_modules —— 找不到 profile 里那份。
+
+因此本地开发需要先跑一次：
+
+```sh
+npm run link:peers
+```
+
+它把运行时所需的 `@deepseek-ai/*` 以 symlink 镜像进本项目的 `node_modules/@deepseek-ai`（已 gitignore）。这一步只影响本地开发；等 `@deepseek-ai/*` 发布到 npm 后，`peerDependencies` 会被正常安装，可删掉此步骤。
+
 ---
 
 ## 用法
