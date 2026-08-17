@@ -10,7 +10,7 @@
 | `team` | 工具 `team` | 拆解 → 并行执行 → 验证 → 修复循环 | `team` |
 | `deep-interview` | 工具 `deep_interview_score` + 技能 `deep-interview` | 苏格拉底式需求访谈 + 数学模糊度门控（逐轮提问、加权评分、本体稳定性） | `deep-interview` |
 | `vision` | 工具 `understand_image` | 用免费 GLM-4V-Flash 给 DeepSeek 加视觉：本地图/URL/data-URI → 文本描述 | （借鉴社区"给 DeepSeek 装眼睛"方案） |
-| `vision-mcp` | MCP 工具 `mcp__vision-mcp__*` | 接入社区 Vision MCP（6 个免费视觉 Provider 自动 fallback） | — |
+| `vision-mcp` | MCP 工具 `mcp__vision-mcp__*` | 自配视觉 MCP 端点的插槽（默认禁用；npm 的 `vision-mcp` 并非免费社区版，见下） | — |
 | `exa-search` | 搜索 provider（`web_search` 后端） | 免密钥 Exa MCP 网络搜索，替换 DeepSeek 官方搜索路由（无需 API key） | （无；借鉴 Nexus-Code / opencode 的 keyless Exa MCP 方案） |
 
 ---
@@ -137,7 +137,16 @@ DeepSeek 是纯文本模型，看不见图（截图、报错弹窗、UI 设计�
 - **http(s) URL**（直传）
 - **data URI**（原样透传）
 
-需要设置环境变量 `ZHIPU_API_KEY`（[智谱开放平台](https://open.bigmodel.cn) 免费申请）。配置（id `omd-vision`）：
+需要设置环境变量 `ZHIPU_API_KEY`（[智谱开放平台](https://open.bigmodel.cn) 免费申请）。**推荐写进 DSH 的用户级 `.env`**（`dsh` 启动器自动加载、不落 shell 历史）：
+
+```sh
+printf 'ZHIPU_API_KEY=你的key\n' > ~/.dsh/.env
+chmod 600 ~/.dsh/.env
+```
+
+> ⚠️ 已继承的环境变量优先于 `.env`：如果你之前在 shell 里 `export` 过 `ZHIPU_API_KEY`，它会盖掉 `.env` 里的值。改 `.env` 后请在干净 shell（未 export 该变量）重启 `dsh`。
+
+配置（id `omd-vision`）：
 
 | key | 默认 | 含义 |
 |---|---|---|
@@ -145,6 +154,8 @@ DeepSeek 是纯文本模型，看不见图（截图、报错弹窗、UI 设计�
 | `baseURL` | `https://open.bigmodel.cn/api/paas/v4` | OpenAI 兼容端点 |
 | `model` | `glm-4v-flash` | 免费视觉模型 |
 | `apiKeyEnv` | `ZHIPU_API_KEY` | API key 环境变量名 |
+
+**验证 key 是否有效**（真实调一次，1x1 PNG）：若返回 `401 令牌已过期或验证不正确`，说明 key 失效，去智谱控制台重新生成。
 
 **隐私**：图片会发送到智谱 API（国内服务器），勿喂敏感内容。
 
@@ -236,7 +247,7 @@ npm run test:coverage   # 测试 + 覆盖率门槛（核心模块 ≥90%）
 dsh --profile web --dump-config
 ```
 
-输出末尾应出现 `# == oh-my-deepseek` 一层，含 `omd-ralplan` / `omd-team` / `omd-deep-interview-*` / `omd-exa-search` 各行及完整默认 config，且 `web` 行的 `searchProvider` 为 `exa`。没有这层说明 `dsh.bundle.patch` 声明没被识别（reconcile 失败）。
+输出末尾应出现 `# == oh-my-deepseek` 一层，含 `omd-ralplan` / `omd-team` / `omd-deep-interview-*` / `omd-vision` / `omd-vision-mcp`（默认 disabled）/ `omd-exa-search` 各行及完整默认 config，且 `web` 行的 `searchProvider` 为 `exa`。没有这层说明 `dsh.bundle.patch` 声明没被识别（reconcile 失败）。
 
 ### 2. 确认模块能被 import
 
@@ -279,6 +290,19 @@ npm run build     # 重新转译 + 拷贝角色文件到 lib/roles/
 ```
 
 `src/roles/*.md` 是运行时按 `import.meta.url` 相对 `lib/roles/` 读取的，所以**改了角色文件也要 rebuild**（`copy-roles.mjs` 会把它拷进 `lib/roles/`）。
+
+### 6. 验证视觉（vision）
+
+1. **确认 key 有效**（真实调 GLM-4V-Flash，1x1 红点 PNG 应返回 `Red`；401 说明 key 失效）：
+   ```sh
+   node --input-type=module -e "fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+process.env.ZHIPU_API_KEY},body:JSON.stringify({model:'glm-4v-flash',messages:[{role:'user',content:[{type:'image_url',image_url:{url:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='}},{type:'text',text:'What color? One word.'}]}]})}).then(r=>r.text()).then(t=>console.log(t.slice(0,200)))"
+   ```
+   （key 需在环境里；若用 `~/.dsh/.env`，在干净 shell 里跑。）
+2. **端到端**：在 headless 的 cwd 放一张图，让 agent 用 `understand_image` 读：
+   ```sh
+   cd "$(dsh 所在目录)"   # headless 的 cwd 是运行目录
+   dsh --profile headless "用 understand_image 读取 test.png，描述它"
+   ```
 
 ---
 
