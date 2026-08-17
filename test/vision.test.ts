@@ -1,8 +1,8 @@
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { extractDescription, resolveImageInput } from '../src/vision.ts'
+import { describe, expect, it } from 'vitest'
+import { clipDescription, extractDescription, resolveImageInput } from '../src/vision-core.ts'
 
 describe('resolveImageInput', () => {
   it('passes through data URIs and http(s) URLs', async () => {
@@ -31,6 +31,28 @@ describe('resolveImageInput', () => {
   it('rejects a missing file', async () => {
     await expect(resolveImageInput('/no/such/file.png', undefined)).rejects.toThrow()
   })
+
+  it('uses the path as-is when relative and no cwd is given', async () => {
+    // A relative path with no cwd resolves against the process cwd; reading a
+    // nonexistent file must reject rather than silently pass through.
+    await expect(resolveImageInput('no-such-file.png', undefined)).rejects.toThrow()
+  })
+
+  it('infers mime from extension for gif/webp/bmp/svg and falls back otherwise', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'omd-vision-'))
+    const cases: Array<[string, string]> = [
+      ['a.gif', 'image/gif'],
+      ['a.webp', 'image/webp'],
+      ['a.bmp', 'image/bmp'],
+      ['a.svg', 'image/svg+xml'],
+      ['a.unknown', 'application/octet-stream'],
+    ]
+    for (const [file, mime] of cases) {
+      writeFileSync(join(dir, file), 'x')
+      const out = await resolveImageInput(file, dir)
+      expect(out.startsWith(`data:${mime};base64,`)).toBe(true)
+    }
+  })
 })
 
 describe('extractDescription', () => {
@@ -54,5 +76,18 @@ describe('extractDescription', () => {
 
   it('throws when there is no text', () => {
     expect(() => extractDescription({ choices: [] })).toThrow(/no text description/)
+  })
+})
+
+describe('clipDescription', () => {
+  it('passes through short descriptions', () => {
+    expect(clipDescription('a short desc')).toBe('a short desc')
+  })
+
+  it('truncates long descriptions with a notice', () => {
+    const out = clipDescription('x'.repeat(5000))
+    // 2000 内容 + '\n… [truncated]' (14 chars)
+    expect(out.length).toBeLessThanOrEqual(2000 + 14)
+    expect(out).toContain('[truncated]')
   })
 })

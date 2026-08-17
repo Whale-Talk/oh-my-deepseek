@@ -13,7 +13,7 @@ export default defineConfig({
       // tests. The testable core is the fixed orchestration logic, the
       // deterministic scoring math, and the pure helpers below; cover it to the
       // "core ≥ 90%" bar from the personal spec.
-      include: ['src/shared.ts', 'src/scripts.ts', 'src/scoring.ts'],
+      include: ['src/shared.ts', 'src/scripts.ts', 'src/scoring.ts', 'src/vision-core.ts'],
       thresholds: {
         statements: 90,
         branches: 80,

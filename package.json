@@ -16,6 +16,7 @@
     "./deep-interview-skill": "./lib/deep-interview-skill.js",
     "./scoring": "./lib/scoring.js",
     "./vision": "./lib/vision.js",
+    "./vision-core": "./lib/vision-core.js",
     "./exa-search": "./lib/exa-search.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"

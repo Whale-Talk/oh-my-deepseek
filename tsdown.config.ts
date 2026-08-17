@@ -9,6 +9,7 @@ export default defineConfig({
     'src/deep-interview.ts',
     'src/deep-interview-skill.ts',
     'src/vision.ts',
+    'src/vision-core.ts',
     'src/exa-search.ts',
   ],
   format: ['esm'],
