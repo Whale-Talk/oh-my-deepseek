@@ -49,19 +49,21 @@
         model: glm-4v-flash
         apiKeyEnv: ZHIPU_API_KEY
 
-    # Vision MCP (community bridge to 6 free vision providers, auto-fallback).
-    # Exposes tools under `mcp__vision-mcp__<name>` (e.g. understand, ocr,
-    # compare, diagnose, chart, ui_eval). Requires at least one of the env keys
-    # (e.g. ZHIPU_API_KEY); the server falls back across configured providers.
+    # Vision MCP — DISABLED by default. The npm package `vision-mcp` is NOT the
+    # free 6-provider community bridge (that one is git-only and not published);
+    # it is an OpenAI-compatible server requiring VISION_API_BASE_URL/KEY.
+    # Leave this row disabled, or point it at your own stdio / streamable-http
+    # vision MCP server (a user patch may override `disabled`, `command`, etc.).
     - id: omd-vision-mcp
       name: '@deepseek-ai/dsh-mcp-client'
+      disabled: true
       config:
         serverName: vision-mcp
         transport: stdio
         command: npx
         args: ['-y', 'vision-mcp']
-        env:
-          ZHIPU_API_KEY: !!js process.env.ZHIPU_API_KEY
+        # Conditional: only pass ZHIPU_API_KEY when the env var is actually set.
+        env: !!js 'process.env.ZHIPU_API_KEY ? { ZHIPU_API_KEY: process.env.ZHIPU_API_KEY } : {}'
 
     - id: omd-exa-search
       name: 'oh-my-deepseek/exa-search'

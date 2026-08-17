@@ -148,11 +148,16 @@ DeepSeek 是纯文本模型，看不见图（截图、报错弹窗、UI 设计�
 
 **隐私**：图片会发送到智谱 API（国内服务器），勿喂敏感内容。
 
-### B. `vision-mcp`（社区方案，可选）
+### B. `vision-mcp`（自配端点，默认禁用）
 
-接入 [Vision MCP](https://github.com/visianlee/vision-mcp)（`npx -y vision-mcp`，DSH `mcp-client` stdio transport），暴露 `mcp__vision-mcp__*` 系列工具（understand / ocr / compare / diagnose / chart / ui_eval）。6 个免费 Provider（Gemini→硅基→智谱→月之暗面→魔搭→Intern-AI）自动 fallback，任配一个 key 即可。与 A 的区别：工具更多、自带 fallback/缓存，但由第三方实现、行为不可控。
+> ⚠️ **踩坑记录**：npm 上 `vision-mcp` 这个包名被一个 OpenAI-compatible 通用实现占用（要求 `VISION_API_BASE_URL`/`VISION_API_KEY`），**不是**社区那个免费 6-provider 桥（[visianlee/vision-mcp](https://github.com/visianlee/vision-mcp) 只在 git 上、未发布 npm）。所以"`npx -y vision-mcp` 一键免费"这个假设是错的。
 
-两条路径可同时启用；默认都开（A 需 `ZHIPU_API_KEY`，B 需至少一个 provider key）。
+因此 `omd-vision-mcp` 行**默认 `disabled: true`**。要用它，把 `disabled` 改为 `false` 并把 `command`/`args`/`env` 指向你自己可用的 stdio 或 streamable-http 视觉 MCP 端点（在 profile 的 `cordis.patch.yml` 按 id 覆盖）。
+
+### 两条路径怎么选
+
+- **A（`understand_image`，推荐）**：免费 GLM-4V-Flash、我们自己的代码、一个 `ZHIPU_API_KEY`，日常主力。
+- **B（自配 MCP）**：需要 OCR/对比/多 provider 时，自己提供 MCP 端点再启用。
 
 ---
 
