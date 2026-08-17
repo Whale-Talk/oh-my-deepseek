@@ -1,0 +1,58 @@
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { extractDescription, resolveImageInput } from '../src/vision.ts'
+
+describe('resolveImageInput', () => {
+  it('passes through data URIs and http(s) URLs', async () => {
+    const dataUri = 'data:image/png;base64,AAAA'
+    expect(await resolveImageInput(dataUri, undefined)).toBe(dataUri)
+    const url = 'https://example.com/x.png'
+    expect(await resolveImageInput(url, undefined)).toBe(url)
+  })
+
+  it('reads an absolute path into a base64 data URI', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'omd-vision-'))
+    const png = join(dir, 'shot.png')
+    writeFileSync(png, Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+    const out = await resolveImageInput(png, undefined)
+    expect(out).toMatch(/^data:image\/png;base64,/)
+    expect(out).toContain(Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64'))
+  })
+
+  it('resolves a relative path against the cwd', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'omd-vision-'))
+    writeFileSync(join(dir, 'shot.jpg'), 'jpegdata')
+    const out = await resolveImageInput('shot.jpg', dir)
+    expect(out).toMatch(/^data:image\/jpeg;base64,/)
+  })
+
+  it('rejects a missing file', async () => {
+    await expect(resolveImageInput('/no/such/file.png', undefined)).rejects.toThrow()
+  })
+})
+
+describe('extractDescription', () => {
+  it('extracts a plain string content', () => {
+    expect(extractDescription({ choices: [{ message: { content: 'a screenshot of a dashboard' } }] })).toBe('a screenshot of a dashboard')
+  })
+
+  it('joins content parts with text type', () => {
+    const payload = {
+      choices: [{ message: { content: [
+        { type: 'text', text: 'A chart.' },
+        { type: 'text', text: ' Rising trend.' },
+      ] } }],
+    }
+    expect(extractDescription(payload as never)).toBe('A chart.\n Rising trend.')
+  })
+
+  it('throws on an API error', () => {
+    expect(() => extractDescription({ error: { message: 'rate limited', code: '429' } })).toThrow(/429/)
+  })
+
+  it('throws when there is no text', () => {
+    expect(() => extractDescription({ choices: [] })).toThrow(/no text description/)
+  })
+})

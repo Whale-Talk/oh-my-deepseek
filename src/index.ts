@@ -27,6 +27,15 @@ export {
   apply as applyDeepInterviewSkill,
 } from './deep-interview-skill.js'
 export {
+  name as visionPluginName,
+  apply as applyVision,
+  Config as VisionConfig,
+  extractDescription,
+  resolveImageInput,
+  VISION_DEFAULT_BASE_URL,
+  VISION_DEFAULT_MODEL,
+} from './vision.js'
+export {
   name as exaSearchPluginName,
   apply as applyExaSearch,
   Config as ExaSearchConfig,

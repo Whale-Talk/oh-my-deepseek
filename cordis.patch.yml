@@ -41,6 +41,28 @@
     - id: omd-deep-interview-skill
       name: 'oh-my-deepseek/deep-interview-skill'
 
+    - id: omd-vision
+      name: 'oh-my-deepseek/vision'
+      config:
+        toolName: understand_image
+        baseURL: https://open.bigmodel.cn/api/paas/v4
+        model: glm-4v-flash
+        apiKeyEnv: ZHIPU_API_KEY
+
+    # Vision MCP (community bridge to 6 free vision providers, auto-fallback).
+    # Exposes tools under `mcp__vision-mcp__<name>` (e.g. understand, ocr,
+    # compare, diagnose, chart, ui_eval). Requires at least one of the env keys
+    # (e.g. ZHIPU_API_KEY); the server falls back across configured providers.
+    - id: omd-vision-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: vision-mcp
+        transport: stdio
+        command: npx
+        args: ['-y', 'vision-mcp']
+        env:
+          ZHIPU_API_KEY: !!js process.env.ZHIPU_API_KEY
+
     - id: omd-exa-search
       name: 'oh-my-deepseek/exa-search'
       config:

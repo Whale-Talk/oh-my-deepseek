@@ -8,6 +8,7 @@ export default defineConfig({
     'src/scoring.ts',
     'src/deep-interview.ts',
     'src/deep-interview-skill.ts',
+    'src/vision.ts',
     'src/exa-search.ts',
   ],
   format: ['esm'],

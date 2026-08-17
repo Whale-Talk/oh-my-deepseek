@@ -38,3 +38,13 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Vision MCP (optional, via npx)
+
+The `omd-vision-mcp` row launches the community
+[Vision MCP](https://github.com/visianlee/vision-mcp) server via `npx -y
+vision-mcp`. It is not vendored into this package; it is downloaded and
+executed on demand by `npx` at runtime. Review its own license and privacy
+terms before use. Images passed to it are sent to whichever configured vision
+provider handles the request.
+

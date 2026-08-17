@@ -9,6 +9,8 @@
 | `ralplan` | 工具 `ralplan` | Planner → Architect → Critic 共识规划循环，直到通过或到轮次上限 | `ralplan` |
 | `team` | 工具 `team` | 拆解 → 并行执行 → 验证 → 修复循环 | `team` |
 | `deep-interview` | 工具 `deep_interview_score` + 技能 `deep-interview` | 苏格拉底式需求访谈 + 数学模糊度门控（逐轮提问、加权评分、本体稳定性） | `deep-interview` |
+| `vision` | 工具 `understand_image` | 用免费 GLM-4V-Flash 给 DeepSeek 加视觉：本地图/URL/data-URI → 文本描述 | （借鉴社区"给 DeepSeek 装眼睛"方案） |
+| `vision-mcp` | MCP 工具 `mcp__vision-mcp__*` | 接入社区 Vision MCP（6 个免费视觉 Provider 自动 fallback） | — |
 | `exa-search` | 搜索 provider（`web_search` 后端） | 免密钥 Exa MCP 网络搜索，替换 DeepSeek 官方搜索路由（无需 API key） | （无；借鉴 Nexus-Code / opencode 的 keyless Exa MCP 方案） |
 
 ---
@@ -123,6 +125,37 @@ npm run link:peers
 - **平台适配不篡改原文**：DSH 侧需要的"结构化输出契约、verdict 映射、忽略 Claude 工具引用"等，作为一段 `<DSH 适配指令>` **追加**在角色正文之后（见 `src/scripts.ts`），不改写正文。
 - **已知差异**（正文保留、但 DSH 不消费的字段）：`model: opus/sonnet`（Anthropic 模型分级，DSH 由 `subagentProvider` 统一决定）、`disallowedTools: Write, Edit`（Claude 工具名，在 DSH 里作为只读软约束存在，未做硬工具禁用）、`.omc/` 状态路径与 `/oh-my-claudecode` 命令（DSH 无对应物，适配指令已让 worker 忽略）。
 
+## 视觉能力（vision）
+
+DeepSeek 是纯文本模型，看不见图（截图、报错弹窗、UI 设计稿、图表、手绘架构图）。本 bundle 提供**两条视觉路径**：
+
+### A. `vision` 插件（自研，推荐）
+
+`understand_image` 工具把图片发给**免费的智谱 GLM-4V-Flash**（OpenAI 兼容 `chat/completions`），返回文本描述。图片可以是：
+
+- **本地路径**（相对 workspace 或绝对路径，自动读文件 → base64 data URI）
+- **http(s) URL**（直传）
+- **data URI**（原样透传）
+
+需要设置环境变量 `ZHIPU_API_KEY`（[智谱开放平台](https://open.bigmodel.cn) 免费申请）。配置（id `omd-vision`）：
+
+| key | 默认 | 含义 |
+|---|---|---|
+| `toolName` | `understand_image` | 模型可见工具名 |
+| `baseURL` | `https://open.bigmodel.cn/api/paas/v4` | OpenAI 兼容端点 |
+| `model` | `glm-4v-flash` | 免费视觉模型 |
+| `apiKeyEnv` | `ZHIPU_API_KEY` | API key 环境变量名 |
+
+**隐私**：图片会发送到智谱 API（国内服务器），勿喂敏感内容。
+
+### B. `vision-mcp`（社区方案，可选）
+
+接入 [Vision MCP](https://github.com/visianlee/vision-mcp)（`npx -y vision-mcp`，DSH `mcp-client` stdio transport），暴露 `mcp__vision-mcp__*` 系列工具（understand / ocr / compare / diagnose / chart / ui_eval）。6 个免费 Provider（Gemini→硅基→智谱→月之暗面→魔搭→Intern-AI）自动 fallback，任配一个 key 即可。与 A 的区别：工具更多、自带 fallback/缓存，但由第三方实现、行为不可控。
+
+两条路径可同时启用；默认都开（A 需 `ZHIPU_API_KEY`，B 需至少一个 provider key）。
+
+---
+
 ## deep-interview（忠实改编 + 数学门控）
 
 `deep-interview` 与 ralplan/team 类型不同：它不是"开多个子 agent 编排"，而是**和用户逐轮对话的苏格拉底访谈**。因此它拆成两部分移植：
@@ -157,7 +190,8 @@ oh-my-deepseek/
 │   ├── team.ts             # 插件：team
 │   ├── deep-interview.ts   # 插件：deep_interview_score 工具
 │   ├── deep-interview-skill.ts   # 插件：deep-interview 内置技能
-│   └── exa-search.ts       # 插件：免密钥 Exa MCP 搜索 provider（web_search 后端）
+│   ├── vision.ts            # 插件：understand_image（GLM-4V-Flash 免费视觉）
+│   └── exa-search.ts        # 插件：免密钥 Exa MCP 搜索 provider（web_search 后端）
 └── test/
     ├── shared.test.ts      # 纯函数（正常/边界/异常）
     ├── roles.test.ts       # 角色完整性与 marker 校验
@@ -176,7 +210,7 @@ npm test                # 单元测试（核心逻辑：正常/边界/异常）
 npm run test:coverage   # 测试 + 覆盖率门槛（核心模块 ≥90%）
 ```
 
-**测试策略**：可单测的核心抽在 `src/shared.ts`（纯函数）、`src/scripts.ts`（固定脚本字符串）和 `src/scoring.ts`（确定性数学）里，这三块**不依赖** `@deepseek-ai/*`，可以在裸环境直接单测。`src/ralplan.ts` / `src/team.ts` / `src/deep-interview.ts` / `src/deep-interview-skill.ts` / `src/exa-search.ts` 是 DSH 胶水（import 尚未发布到 npm 的 `@deepseek-ai/*`），由 loader 在真实 profile 里验证，不纳入单测。CI（`.github/workflows/ci.yml`）跑 `build + test + coverage` 三步。
+**测试策略**：可单测的核心抽在 `src/shared.ts`（纯函数）、`src/scripts.ts`（固定脚本字符串）和 `src/scoring.ts`（确定性数学）里，这三块**不依赖** `@deepseek-ai/*`，可以在裸环境直接单测。`src/ralplan.ts` / `src/team.ts` / `src/deep-interview.ts` / `src/deep-interview-skill.ts` / `src/vision.ts` / `src/exa-search.ts` 是 DSH 胶水（import 尚未发布到 npm 的 `@deepseek-ai/*`、或含网络调用），由 loader 在真实 profile 里验证，不纳入单测（`vision.ts` 的纯函数 `resolveImageInput` / `extractDescription` 已在 `test/vision.test.ts` 覆盖）。CI（`.github/workflows/ci.yml`）跑 `build + test + coverage` 三步。
 
 类型检查需要在能解析 `@deepseek-ai/*` 的环境里跑（这些包尚未发布到 npm，运行时由 DSH 安装树通过 parent-walk 提供）。两种做法：
 
