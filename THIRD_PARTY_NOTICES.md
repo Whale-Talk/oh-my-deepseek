@@ -13,6 +13,16 @@ These files are ported unmodified. The plugins append a short workflow-adaptatio
 block at runtime (see `src/scripts.ts`) rather than editing the upstream text, so
 the ported prompts remain diffable against their source of truth.
 
+## Nexus-Code role prompts
+
+The files under `src/roles/` (`code-reviewer.md`, `security-reviewer.md`,
+`debugger.md`, `test-engineer.md`) are byte-for-byte copies of the
+corresponding `agents/*.md` role prompts from the user's local
+Nexus-Code installation (`~/.nexus/agents/*.md`), which are customized
+variants of the same-named oh-my-claudecode roles. Nexus-Code
+(`NexusAir Technologies/Nexus-Code`) is the user's own project; its license
+terms apply to those files.
+
 The MIT License text follows:
 
 ```

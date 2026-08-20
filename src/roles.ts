@@ -1,10 +1,13 @@
 /**
- * Role-prompt loader. The five role files under `roles/` are byte-for-byte
- * copies of the oh-my-claudecode `agents/*.md` role prompts (MIT licensed, see
- * THIRD_PARTY_NOTICES.md). They are kept as plain Markdown assets so the
- * ported prompts remain diffable against their upstream source, and are loaded
- * at runtime relative to the module URL — independent of `process.cwd()` and
- * of the bundler's asset handling.
+ * Role-prompt loader. The role files under `roles/` are byte-for-byte copies
+ * of upstream agent prompts:
+ *   - planner/architect/critic/executor/verifier ← oh-my-claudecode `agents/*.md`
+ *   - code-reviewer/security-reviewer/debugger/test-engineer ← Nexus-Code
+ *     `~/.nexus/agents/*.md` (Nexus' customized variants of the same OMC roles)
+ * (MIT licensed, see THIRD_PARTY_NOTICES.md). They are kept as plain Markdown
+ * assets so the ported prompts remain diffable against their upstream source,
+ * and are loaded at runtime relative to the module URL — independent of
+ * `process.cwd()` and of the bundler's asset handling.
  * @module oh-my-deepseek/roles
  */
 
@@ -13,7 +16,17 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /** Role names this bundle ships. */
-export const ROLE_NAMES = ['planner', 'architect', 'critic', 'executor', 'verifier'] as const
+export const ROLE_NAMES = [
+  'planner',
+  'architect',
+  'critic',
+  'executor',
+  'verifier',
+  'code-reviewer',
+  'security-reviewer',
+  'debugger',
+  'test-engineer',
+] as const
 
 export type RoleName = (typeof ROLE_NAMES)[number]
 

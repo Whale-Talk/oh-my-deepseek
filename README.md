@@ -109,21 +109,41 @@ npm run link:peers
 
 ## 角色提示词（完整移植）
 
-`ralplan` / `team` 的每个 worker 都使用 OMC 的**完整原版角色提示词**，而不是精简改写版。这 5 个角色以 Markdown 原样存放在 `src/roles/`，构建时拷贝到 `lib/roles/`，插件运行时按模块相对路径加载（不依赖 `cwd`）：
+`ralplan` / `team` 的每个 worker 都使用 OMC 的**完整原版角色提示词**，而不是精简改写版。9 个角色以 Markdown 原样存放在 `src/roles/`，构建时拷贝到 `lib/roles/`，插件运行时按模块相对路径加载（不依赖 `cwd`）：
 
 | 角色 | 用于 | 上游源文件 |
 |---|---|---|
-| `planner` | ralplan 规划 + team 拆解 | `agents/planner.md`（140 行） |
-| `architect` | ralplan 钢人式反驳 | `agents/architect.md`（129 行） |
-| `critic` | ralplan 最终质量门 | `agents/critic.md`（280 行） |
-| `executor` | team 并行执行 | `agents/executor.md`（121 行） |
-| `verifier` | team 验收验证 | `agents/verifier.md`（114 行） |
+| `planner` | ralplan 规划 + team 拆解 | OMC `agents/planner.md`（140 行） |
+| `architect` | ralplan 钢人式反驳 | OMC `agents/architect.md`（129 行） |
+| `critic` | ralplan 最终质量门 | OMC `agents/critic.md`（280 行） |
+| `executor` | team 并行执行 | OMC `agents/executor.md`（121 行） |
+| `verifier` | team 验收验证 | OMC `agents/verifier.md`（114 行） |
+| `code-reviewer` | 专用工具 `code_reviewer`（只读） | Nexus `~/.nexus/agents/code-reviewer.md` |
+| `security-reviewer` | 专用工具 `security_reviewer`（只读） | Nexus `~/.nexus/agents/security-reviewer.md` |
+| `debugger` | 专用工具 `debugger` | Nexus `~/.nexus/agents/debugger.md` |
+| `test-engineer` | 专用工具 `test_engineer` | Nexus `~/.nexus/agents/test-engineer.md` |
 
 移植原则（诚实说明，不作事后粉饰）：
 
-- **正文 100% 原样**：`src/roles/*.md` 与上游 `agents/*.md` **字节级一致**（含 frontmatter、调查协议、失败模式、输出合同等全部内容），可 `diff` 对比。
+- **正文 100% 原样**：`src/roles/*.md` 与上游 **字节级一致**（含 frontmatter、调查协议、失败模式、输出合同等全部内容），可 `diff` 对比。前 5 个来自 OMC，后 4 个来自 Nexus（`~/.nexus/agents/*.md`，是 OMC 同名的定制版，内容不同）。
 - **平台适配不篡改原文**：DSH 侧需要的"结构化输出契约、verdict 映射、忽略 Claude 工具引用"等，作为一段 `<DSH 适配指令>` **追加**在角色正文之后（见 `src/scripts.ts`），不改写正文。
-- **已知差异**（正文保留、但 DSH 不消费的字段）：`model: opus/sonnet`（Anthropic 模型分级，DSH 由 `subagentProvider` 统一决定）、`disallowedTools: Write, Edit`（Claude 工具名，在 DSH 里作为只读软约束存在，未做硬工具禁用）、`.omc/` 状态路径与 `/oh-my-claudecode` 命令（DSH 无对应物，适配指令已让 worker 忽略）。
+- **已知差异**（正文保留、但 DSH 不消费的字段）：`model: opus/sonnet`（Anthropic 模型分级，DSH 由 `subagentProvider` 统一决定）、`.omc/` 状态路径与 `/oh-my-claudecode` 命令（DSH 无对应物，适配指令已让 worker 忽略）。
+
+## 专用角色工具（specialist tools）
+
+除了 ralplan/team 内部按阶段注入角色，本 bundle 还注册了 **4 个可直接调用的专用角色工具**（`@deepseek-ai/dsh-tool-subagent` 实例，persona = Nexus 角色全文）：
+
+| 工具 | 角色 | 只读 |
+|---|---|---|
+| `code_reviewer` | code-reviewer | ✅ `toolFilter.deny: write/edit/str_replace_editor`（工具层硬禁用） |
+| `security_reviewer` | security-reviewer | ✅ 同上 |
+| `debugger` | debugger | ❌ 可写（要改代码修复） |
+| `test_engineer` | test-engineer | ❌ 可写（要写测试） |
+
+主 agent 可直接说"用 code_reviewer 审一下 src/auth"——子代理就会是那个角色的完整人格。**只读角色在工具层被硬禁用写文件**（比 Nexus 的 `disallowedTools` 软约束更硬，因为我们用了 DSH 的 `toolFilter.deny`）。
+
+> 这 4 行是 `scripts/gen-specialist-patch.mjs` **生成**进 `cordis.patch.yml` 的（persona 是角色全文，脚本从 `src/roles/*.md` 注入）。改角色文件后重跑该脚本即可。
+
 
 ## 视觉能力（vision）
 
