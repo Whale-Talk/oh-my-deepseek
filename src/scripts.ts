@@ -142,6 +142,38 @@ function criticPrompt(snapshot, role) {
   ].join('\n')
 }
 
+/**
+ * Critic prompt variant that also receives specialist-review findings. The
+ * Critic remains the final gate: it must weigh the code-quality and security
+ * findings and either fold them into its verdict or dismiss them with reason.
+ */
+function criticPromptWithFindings(snapshot, role, findings) {
+  const base = criticPrompt(snapshot, role)
+  if (findings.trim() === '') return base
+  return base + '\n\n=== Specialist review findings (code quality / security) ===\n' + findings
+    + '\n\nWeigh these findings in your verdict. If they reveal a blocking issue, do NOT approve.'
+}
+
+/**
+ * Specialist review of a plan snapshot (code-reviewer / security-reviewer
+ * lens). The specialist reviews the plan for code-quality or security
+ * implications — the plan is not yet implemented, so it flags missing test
+ * plans, unsafe operations, missing error handling, auth/data risks, etc. —
+ * and returns a concise list of findings. This links the Nexus specialist
+ * roles into the ralplan pipeline.
+ */
+function specialistReviewPrompt(snapshot, role, focus) {
+  return [
+    role,
+    '',
+    '=== oh-my-deepseek workflow task ===',
+    'You are a ' + focus + ' specialist reviewing the implementation plan below. The plan is NOT yet implemented — review the PLAN itself: flag missing test strategy, unsafe operations, unhandled errors, auth/data-exposure risks, and anything that would produce low-quality or insecure code if executed as written. Return ONLY a concise list of findings (one per line, prefixed by severity). Be concrete: cite the plan step or section each finding refers to. Do NOT modify the plan.',
+    '',
+    'Plan:',
+    snapshot,
+  ].join('\n')
+}
+
 function revisionPrompt(snapshot, architect, critic, role) {
   return [
     role,
@@ -170,7 +202,17 @@ for (let round = 1; round <= args.maxIterations; round += 1) {
   // Architect and Critic review the SAME fixed snapshot, sequentially, and the
   // Architect's output never reaches the Critic.
   const architect = await agent(architectPrompt(snapshot, args.roles.architect), { label: 'Architect r' + round, phase: 'review' })
-  const critic = await agent(criticPrompt(snapshot, args.roles.critic), { label: 'Critic r' + round, phase: 'review', schema: verdictSchema })
+  // Specialist review: code-reviewer and security-reviewer each review the
+  // plan snapshot for code-quality and security implications. Their findings
+  // feed the Critic's gate but do not replace it.
+  const codeReview = args.roles.codeReviewer !== undefined
+    ? await agent(specialistReviewPrompt(snapshot, args.roles.codeReviewer, 'code quality'), { label: 'CodeReview r' + round, phase: 'review' })
+    : ''
+  const securityReview = args.roles.securityReviewer !== undefined
+    ? await agent(specialistReviewPrompt(snapshot, args.roles.securityReviewer, 'security'), { label: 'SecurityReview r' + round, phase: 'review' })
+    : ''
+  const specialistFindings = [codeReview, securityReview].filter(Boolean).join('\n---\n')
+  const critic = await agent(criticPromptWithFindings(snapshot, args.roles.critic, specialistFindings), { label: 'Critic r' + round, phase: 'review', schema: verdictSchema })
   if (architect === null || critic === null) return { approved: false, plan: plan, error: 'A reviewer failed to respond' }
   if (critic.verdict === 'APPROVE') return { approved: true, plan: plan, rounds: round }
   const revised = await agent(revisionPrompt(snapshot, architect, critic, args.roles.planner), { label: 'Planner r' + round, phase: 'planning', schema: planSchema })

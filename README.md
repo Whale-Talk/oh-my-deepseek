@@ -6,7 +6,7 @@
 
 | 插件 | 工具/技能 | 作用 | 对应 OMC |
 |---|---|---|---|
-| `ralplan` | 工具 `ralplan` | Planner → Architect → Critic 共识规划循环，直到通过或到轮次上限 | `ralplan` |
+| `ralplan` | 工具 `ralplan` | Planner → Architect → **Code/Security 专业评审** → Critic 共识规划循环（专业评审用 Nexus 角色联动） | `ralplan` |
 | `team` | 工具 `team` | 拆解 → 并行执行 → 验证 → 修复循环 | `team` |
 | `deep-interview` | 工具 `deep_interview_score` + 技能 `deep-interview` | 苏格拉底式需求访谈 + 数学模糊度门控（逐轮提问、加权评分、本体稳定性） | `deep-interview` |
 | `vision` | 工具 `understand_image` | 用免费 GLM-4V-Flash 给 DeepSeek 加视觉：本地图/URL/data-URI → 文本描述 | （借鉴社区"给 DeepSeek 装眼睛"方案） |
@@ -143,6 +143,20 @@ npm run link:peers
 主 agent 可直接说"用 code_reviewer 审一下 src/auth"——子代理就会是那个角色的完整人格。**只读角色在工具层被硬禁用写文件**（比 Nexus 的 `disallowedTools` 软约束更硬，因为我们用了 DSH 的 `toolFilter.deny`）。
 
 > 这 4 行是 `scripts/gen-specialist-patch.mjs` **生成**进 `cordis.patch.yml` 的（persona 是角色全文，脚本从 `src/roles/*.md` 注入）。改角色文件后重跑该脚本即可。
+
+### 与 ralplan 的联动
+
+ralplan 的共识循环现在**内嵌了这两个 Nexus 专业角色的评审**，不需要子代理去"调用工具"（workflow 子代理不继承 host 组合的专用工具）：
+
+```
+Planner → Architect → CodeReview(代码质量) → SecurityReview(安全) → Critic(综合判定)
+```
+
+- `code-reviewer` 和 `security-reviewer` 角色各审**同一份计划快照**（针对计划的测试策略、危险操作、错误处理、认证/数据暴露风险等）；
+- 发现**回灌给 Critic**——Critic 必须权衡这些专业发现，有阻塞性问题不得批准；
+- 每次迭代（round）都跑专业评审，直到批准或到轮次上限。
+
+这样 ralplan 既保留了 OMC 的共识循环，又用上了 Nexus 专业角色的"单点质量"，两套角色真正联动。
 
 
 ## 视觉能力（vision）

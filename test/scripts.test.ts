@@ -8,6 +8,8 @@ const PLACEHOLDER_ROLES = {
   critic: 'CRITIC-ROLE',
   executor: 'EXECUTOR-ROLE',
   verifier: 'VERIFIER-ROLE',
+  codeReviewer: 'CODE-REVIEWER-ROLE',
+  securityReviewer: 'SECURITY-REVIEWER-ROLE',
 }
 
 /** Wrap a fixed workflow script as an async function with injected engine hooks. */
@@ -68,6 +70,8 @@ describe('ralplan consensus loop', () => {
           return { title: 'T', goal: 'G', steps: [{ id: '1', action: 'do' }] }
         }
         if (opts.label.startsWith('Architect')) return 'architect-feedback'
+        if (opts.label.startsWith('CodeReview')) return 'CRITICAL: no test plan for step 1'
+        if (opts.label.startsWith('SecurityReview')) return 'MAJOR: step 2 exposes user data'
         if (opts.label.startsWith('Critic')) {
           criticRound += 1
           return { verdict: verdicts[criticRound - 1], summary: 's', concerns: ['c'] }
@@ -78,12 +82,26 @@ describe('ralplan consensus loop', () => {
     }
   }
 
-  it('approves on the first round in Planner→Architect→Critic order', async () => {
+  it('approves on the first round in Planner→Architect→Specialists→Critic order', async () => {
     const { calls, agent } = makeRalplanAgent(['APPROVE'])
     const result = (await runWorkflow(RALPLAN_SCRIPT, { agent }, { objective: 'x', maxIterations: 5 })) as Record<string, unknown>
     expect(result.approved).toBe(true)
     expect(result.rounds).toBe(1)
-    expect(calls.map((c) => c.label)).toEqual(['Planner', 'Architect r1', 'Critic r1'])
+    expect(calls.map((c) => c.label)).toEqual([
+      'Planner',
+      'Architect r1',
+      'CodeReview r1',
+      'SecurityReview r1',
+      'Critic r1',
+    ])
+  })
+
+  it('feeds specialist findings into the Critic verdict', async () => {
+    const { calls, agent } = makeRalplanAgent(['APPROVE'])
+    await runWorkflow(RALPLAN_SCRIPT, { agent }, { objective: 'x', maxIterations: 5 })
+    const critic = calls.find((c) => c.label === 'Critic r1')?.prompt ?? ''
+    expect(critic).toContain('CRITICAL: no test plan for step 1')
+    expect(critic).toContain('MAJOR: step 2 exposes user data')
   })
 
   it('iterates and revises until approval, without leaking Architect feedback to Critic', async () => {

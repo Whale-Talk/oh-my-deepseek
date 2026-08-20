@@ -148,7 +148,13 @@ export function apply(ctx: Context, config: Config): void {
         args: {
           objective,
           maxIterations,
-          roles: { planner: roles.planner, architect: roles.architect, critic: roles.critic },
+          roles: {
+            planner: roles.planner,
+            architect: roles.architect,
+            critic: roles.critic,
+            codeReviewer: roles['code-reviewer'],
+            securityReviewer: roles['security-reviewer'],
+          },
         },
         subagentProvider: resolved.subagentProvider,
         maxTotalAgents: 1 + maxIterations * 3,
